@@ -311,9 +311,14 @@ def policy_search(
         return F, R, belief_map, False
     else:
         rollouts = [plan_to_rollout(spec, plan, a_b0, store) for plan in plans]
-
+    # concatenate transitions: new
+    concat_trans = []
+    for rollout in rollouts:
+        concat_trans += rollout.transitions
+    concat_trans = list(set(concat_trans))
+    rollout = AbstractRollout(concat_trans)
     for step in range(config["batch_size"]):
-        rollout = random.choice(rollouts)
+        # rollout = random.choice(rollouts) # old
         if len(rollout.transitions) == 0:
             continue
 
