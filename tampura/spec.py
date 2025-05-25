@@ -59,8 +59,8 @@ BETA_PRIOR = (1, 1)
 
 def beta_quantile(A, B, N):
     # N+2 to give reasonable results when N=0
-    # return beta.ppf(1 - (1 / (N + 2)), BETA_PRIOR[0] + A, BETA_PRIOR[1] + B)
-    return beta.ppf(0.95, BETA_PRIOR[0] + A, BETA_PRIOR[1] + B)
+    return beta.ppf(1 - (1 / (N + 2)), BETA_PRIOR[0] + A, BETA_PRIOR[1] + B)
+    # return beta.ppf(0.95, BETA_PRIOR[0] + A, BETA_PRIOR[1] + B)
 
 
 @dataclass
