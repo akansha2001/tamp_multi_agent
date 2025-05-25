@@ -79,6 +79,8 @@ pip install pygraphviz
 
 See `notebooks/grasping_env.ipynb` for a simple usage example.
 
-# Robot environments
+# Notebooks
 
-The robot environments from the paper are in a separate [tampura_environments](https://github.com/aidan-curtis/tampura_environments) repo
+The notebooks are available for running in the `notebooks` folder of the repository.
+
+<!-- The robot environments from the paper are in a separate [tampura_environments](https://github.com/aidan-curtis/tampura_environments) repo -->
