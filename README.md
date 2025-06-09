@@ -13,62 +13,11 @@ git clone git@github.com:akansha2001/tamp_multi_agent.git
 In the root of the repository, install IsaacLab. Instructions for the `pip` installation using `venv`:
 
 ### IsaacLab installation
-#### Create a virtual environment
-```
-# create a virtual environment named env_isaaclab with python3.10
-python3.10 -m venv env_isaaclab
-# activate the virtual environment
-source env_isaaclab/bin/activate
-```
 
-#### Install CUDA-enabled PyTorch
+Follow the instructions for installing IsaacLab from [website](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html). Use the binaries installation for IsaacSim and set up a conda environment.
 
-For CUDA 12
 
-```
-pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-```
-
-#### Upgrade `pip`
-```
-pip install --upgrade pip
-```
-
-#### Install Isaac Sim packages
-
-```
-pip install 'isaacsim[all,extscache]==4.5.0' --extra-index-url https://pypi.nvidia.com
-```
-
-#### Install IsaacLab
-
-Clone Isaac Lab
-
-```
-git clone git@github.com:isaac-sim/IsaacLab.git
-```
-
-Install dependencies using `apt`
-
-```
-sudo apt install cmake build-essential
-```
-
-From the Isaac Lab folder, run the following command
-
-```
-./isaaclab.sh --install # or "./isaaclab.sh -i"
-```
-
-### Install the TAMPURA package
-
-Activate the IsaacLab venv
-
-```
-source env_isaaclab/bin/activate
-```
-
-From the root of the repository, run the following commands
+Activate the IsaacLab environment. From the root of the repository, run the following commands
 
 ```
 python -m pip install -e .
