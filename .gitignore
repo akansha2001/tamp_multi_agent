@@ -178,3 +178,8 @@ scripts/mdp_experiments_folder
 # isaaclab
 IsaacLab
 env_isaaclab
+
+# versions
+=2.4.1
+=2017.4.17
+4.3
