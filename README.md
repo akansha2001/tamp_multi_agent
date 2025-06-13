@@ -10,11 +10,11 @@ Clone this repository
 ```
 git clone git@github.com:akansha2001/tamp_multi_agent.git
 ```
-In the root of the repository, install IsaacLab. Instructions for the `pip` installation using `venv`:
+In the root of the repository, install IsaacLab. 
 
 ### IsaacLab installation
 
-Follow the instructions for installing IsaacLab from [website](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html). Use the binaries installation for IsaacSim and set up a conda environment.
+Follow the instructions for installing IsaacLab from [website](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html). Use the `pip` installation for IsaacSim and set up a `conda` environment.
 
 
 Activate the IsaacLab environment. From the root of the repository, run the following commands
