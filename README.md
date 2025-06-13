@@ -32,4 +32,14 @@ See `notebooks/grasping_env.ipynb` for a simple usage example.
 
 The notebooks are available for running in the `notebooks` folder of the repository.
 
+# IsaacLab execution
+
+For sample executions, move the `tamp_uncertainty` folder to `IsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulation/lift/config/` and enter
+
+```
+python IsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulation/lift/config/tamp_uncertainty/search_object.py --num_envs 1
+```
+
+from the root of the repository. More information about these scenarios is available on [this repository](https://github.com/akansha2001/tamp_uncertainty.git).
+
 <!-- The robot environments from the paper are in a separate [tampura_environments](https://github.com/aidan-curtis/tampura_environments) repo -->
