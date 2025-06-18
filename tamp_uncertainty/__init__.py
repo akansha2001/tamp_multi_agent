@@ -5,7 +5,7 @@
 import gymnasium as gym
 import os
 
-from . import class_uncertainty_ik_abs_env_cfg, search_object_ik_abs_env_cfg
+from . import class_uncertainty_ik_abs_env_cfg, search_object_ik_abs_env_cfg, simple_pick_env_cfg, cabinet_pick_env_cfg
 
 
 
@@ -33,3 +33,25 @@ gym.register(
     disable_env_checker=True,
 )
 
+
+# simple pick
+
+gym.register(
+    id="Isaac-Lift-Cube-Franka-IK-Abs-simple-pick",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": simple_pick_env_cfg.FrankaSimplePickEnvCfgik,
+    },
+    disable_env_checker=True,
+)
+
+# cabinet pick
+
+gym.register(
+    id="Isaac-Lift-Cube-Franka-IK-Abs-cabinet-pick",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": cabinet_pick_env_cfg.FrankaCabinetPickEnvCfgik,
+    },
+    disable_env_checker=True,
+)
