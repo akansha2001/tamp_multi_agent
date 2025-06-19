@@ -339,6 +339,8 @@ def get_args(expr, prefix=VARIABLE_PREFIX) -> List[str]:
     """
     if isinstance(expr, Atom):
         return list(itertools.chain.from_iterable([get_args(c, prefix=prefix) for c in expr.args]))
+    elif isinstance(expr, Eq): # new
+        return list([expr.a, expr.b])
     elif isinstance(expr, Not):
         return get_args(expr.component, prefix=prefix)
     elif isinstance(expr, str):
