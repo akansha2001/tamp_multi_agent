@@ -33,9 +33,9 @@ from tampura.config.config import load_config, setup_logger
 
 # TODO: different training and execution scenarios, study the MDPs
 # 0: human, 1: random, 2: inactive
-TRAIN = 2
+TRAIN = 1
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 2
+EXEC = 3
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
@@ -896,154 +896,366 @@ def main():
     # Set some print options to print out abstract belief, action, observation, and reward
     cfg["print_options"] = "ab,a,o,r"
     cfg["vis_graph"] = True
-
-    if TRAIN == 0: # human
-        cfg["batch_size"] = 10  
-        cfg["num_samples"] = 50
-    elif TRAIN == 1: # random
-        cfg['batch_size'] = 500
-        cfg['num_samples'] = 500
-    elif TRAIN == 2:
-        cfg["batch_size"] = 100  
-        cfg["num_samples"] = 2000 
+    
+    cfg['batch_size'] = 500
+    cfg['num_samples'] = 500
     
     cfg["max_steps"] = 15
     cfg["num_skeletons"] = 100
+    cfg['envelope_threshold'] = 0.05 # enforce reuse
+    
     cfg["flat_sample"] = False # TODO: check; may cause progressive widening
     cfg['save_dir'] = os.getcwd()+"/runs/run{}".format(time.time())
+    
+    
+    if EXEC != 3: # not nominal
 
-    # cfg['from_scratch'] = False # imp: re-use!!! but graph gets too big
-    cfg['envelope_threshold'] = 0.05 # enforce reuse
-
-    # state
-    s = EnvState(holding={ROBOTS[0]:[],ROBOTS[1]:[]},clean=[REGIONS[1]],
-                obj_regions={MUG:REGIONS[0]},
-                next_actions=["nothing_action-"+ROBOTS[0],"nothing_action-"+ROBOTS[1]])
-    # for robot1
-    # Initialize 
-    env = ToyDiscrete(config=cfg)
-    b0, store= env.initialize(ego=ROBOTS[0],s=s)
-
-
-    # Set up logger to print info
-    setup_logger(cfg["save_dir"], logging.INFO)
-
-    # Initialize the policy
-    planner = TampuraPolicy(config = cfg, problem_spec = env.problem_spec)
-
-    env.state = copy.deepcopy(s)
-
-
-
-    b=b0
-
-
-    assert env.problem_spec.verify(store)
-
-    save_config(planner.config, planner.config["save_dir"])
-
-    history = RolloutHistory(planner.config)
-
-    st = time.time()
-    for step in range(100):
+        if TRAIN == 0: # human
+            cfg["batch_size"] = 10  
+            cfg["num_samples"] = 50
+        elif TRAIN == 1: # random
+            cfg['batch_size'] = 500
+            cfg['num_samples'] = 500
+        elif TRAIN == 2:
+            cfg["batch_size"] = 100  
+            cfg["num_samples"] = 2000 
         
-        # robot 1 acts
+        
+
+        # state
+        s = EnvState(holding={ROBOTS[0]:[],ROBOTS[1]:[]},clean=[REGIONS[1]],
+                    obj_regions={MUG:REGIONS[0]},
+                    next_actions=["nothing_action-"+ROBOTS[0],"nothing_action-"+ROBOTS[1]])
+        # for robot1
+        # Initialize 
+        env = ToyDiscrete(config=cfg)
+        b0, store= env.initialize(ego=ROBOTS[0],s=s)
+
+
+        # Set up logger to print info
+        setup_logger(cfg["save_dir"], logging.INFO)
+
+        # Initialize the policy
+        planner = TampuraPolicy(config = cfg, problem_spec = env.problem_spec)
+
         env.state = copy.deepcopy(s)
-        b.next_actions = s.next_actions # important!!
-        a_b = b.abstract(store)
-        reward = env.problem_spec.get_reward(a_b, store)
-        
-        if reward:
-            print("goal achieved")
-            break
-        
-        logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
-        if "s" in planner.print_options:
-            logging.info("State: " + str(s))
-        if "b" in planner.print_options:
-            logging.info("Belief: " + str(b))
-        if "ab" in planner.print_options:
-            logging.info("Abstract Belief: " + str(a_b))
-        if "r" in planner.print_options:
-            logging.info("Reward: " + str(reward))
-        
-        
-        action, info, store = planner.get_action(b, store) 
-        
 
-        if action.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
-            bp = copy.deepcopy(b)
-            observation = None
+
+
+        b=b0
+
+
+        assert env.problem_spec.verify(store)
+
+        save_config(planner.config, planner.config["save_dir"])
+
+        history = RolloutHistory(planner.config)
+
+        st = time.time()
+        for step in range(100):
             
-            # replace previous action with nothing 
+            # robot 1 acts
+            env.state = copy.deepcopy(s)
+            b.next_actions = s.next_actions # important!!
+            a_b = b.abstract(store)
+            reward = env.problem_spec.get_reward(a_b, store)
+            
+            if reward:
+                print("goal achieved")
+                break
+            
+            logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+            if "s" in planner.print_options:
+                logging.info("State: " + str(s))
+            if "b" in planner.print_options:
+                logging.info("Belief: " + str(b))
+            if "ab" in planner.print_options:
+                logging.info("Abstract Belief: " + str(a_b))
+            if "r" in planner.print_options:
+                logging.info("Reward: " + str(reward))
+            
+            
+            action, info, store = planner.get_action(b, store) 
+            
+
+            if action.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
+                bp = copy.deepcopy(b)
+                observation = None
+                
+                # replace previous action with nothing 
+                for ac in s.next_actions:
+                    name,args = ac.split("-")
+                    args=args.split("%")
+                    if args[0] == ROBOTS[1]:
+                        s.next_actions.remove(ac)
+                        s.next_actions.append("nothing_action-"+args[0])
+                
+                continue # skip the rest of the loop (asking for next action) and repeat MDP solving step
+                
+            else:
+                
+                if "a" in planner.print_options:
+                    logging.info("Action: " + str(action))
+                observation= env.step(action, b, store) # should call execute function
+                bp = b.update(action, observation, store)
+
+                if planner.config["vis"]:
+                    env.vis_updated_belief(bp, store)
+
+            a_bp = bp.abstract(store)
+            history.add(s, b, a_b, action, observation, reward, info, store, time.time() - st)
+
+            reward = env.problem_spec.get_reward(a_bp, store)
+            
+            
+            if "o" in planner.print_options:
+                logging.info("Observation: " + str(observation))
+            if "sp" in planner.print_options:
+                logging.info("Next State: " + str(env.state))
+            if "bp" in planner.print_options:
+                logging.info("Next Belief: " + str(bp))
+            if "abp" in planner.print_options:
+                logging.info("Next Abstract Belief: " + str(a_bp))
+            if "rp" in planner.print_options:
+                logging.info("Next Reward: " + str(reward))
+
+            # update the belief
+            b = bp
+            # update the state as modified by ego!
+            s = copy.deepcopy(env.state)
+
+            # remove previous action (nothing)
             for ac in s.next_actions:
                 name,args = ac.split("-")
                 args=args.split("%")
                 if args[0] == ROBOTS[1]:
                     s.next_actions.remove(ac)
-                    s.next_actions.append("nothing_action-"+args[0])
-            
-            continue # skip the rest of the loop (asking for next action) and repeat MDP solving step
-            
-        else:
-            
-            if "a" in planner.print_options:
-                logging.info("Action: " + str(action))
-            observation= env.step(action, b, store) # should call execute function
-            bp = b.update(action, observation, store)
-
-            if planner.config["vis"]:
-                env.vis_updated_belief(bp, store)
-
-        a_bp = bp.abstract(store)
-        history.add(s, b, a_b, action, observation, reward, info, store, time.time() - st)
-
-        reward = env.problem_spec.get_reward(a_bp, store)
-        
-        
-        if "o" in planner.print_options:
-            logging.info("Observation: " + str(observation))
-        if "sp" in planner.print_options:
-            logging.info("Next State: " + str(env.state))
-        if "bp" in planner.print_options:
-            logging.info("Next Belief: " + str(bp))
-        if "abp" in planner.print_options:
-            logging.info("Next Abstract Belief: " + str(a_bp))
-        if "rp" in planner.print_options:
-            logging.info("Next Reward: " + str(reward))
-
-        # update the belief
-        b = bp
-        # update the state as modified by ego!
-        s = copy.deepcopy(env.state)
-
-        # remove previous action (nothing)
-        for ac in s.next_actions:
-            name,args = ac.split("-")
-            args=args.split("%")
-            if args[0] == ROBOTS[1]:
-                s.next_actions.remove(ac)
-                
-        
-        # get current action
                     
-        next_actions = get_next_actions_execute(action,b,store)
-        for ac in next_actions:
-            s.next_actions.append(ac)
             
-    
-        # true outcome evaluated in functions
-        
-    # history.add(env.state, bp, a_bp, None, None, reward, info, store, time.time() - st)
-        
-    logging.info("=" * 20)
-
-    env.wrapup()
-
-    if not planner.config["real_execute"]:
-        save_run_data(history, planner.config["save_dir"])
+            # get current action
+                        
+            next_actions = get_next_actions_execute(action,b,store)
+            for ac in next_actions:
+                s.next_actions.append(ac)
                 
+        
+            # true outcome evaluated in functions
+            
+        # history.add(env.state, bp, a_bp, None, None, reward, info, store, time.time() - st)
+            
+        logging.info("=" * 20)
+
+        env.wrapup()
+
+        if not planner.config["real_execute"]:
+            save_run_data(history, planner.config["save_dir"])
+                    
+    else: # nominal
+        
+        # train random
+        
+        # state
+        s = EnvState(holding={ROBOTS[0]:[],ROBOTS[1]:[]},clean=[REGIONS[1]],
+                    obj_regions={MUG:REGIONS[0]},
+                    next_actions=["nothing_action-"+ROBOTS[0],"nothing_action-"+ROBOTS[1]])
+
+        save_dir = os.getcwd()+"/runs/run{}".format(time.time())
+        # for robot1
+        # Initialize 
+        save_dir_1 = save_dir + "/planner1"
+        cfg1 = cfg.copy()
+        cfg1['save_dir'] = save_dir_1
+        env1 = ToyDiscrete(config=cfg1)
+        b01, store1= env1.initialize(ego=ROBOTS[0],s=s)
+        # for robot2
+        # Initialize 
+        save_dir_2 = save_dir + "/planner2"
+        cfg2 = cfg.copy()
+        cfg2['save_dir'] = save_dir_2
+        env2 = ToyDiscrete(config=cfg2)
+        b02, store2= env2.initialize(ego=ROBOTS[1],s=s)
+
+        # Set up logger to print info
+        setup_logger(cfg1["save_dir"], logging.INFO)
+        setup_logger(cfg2["save_dir"], logging.INFO)
+
+        # Initialize the policy
+
+        planner1 = TampuraPolicy(config = cfg1, problem_spec = env1.problem_spec)
+        planner2 = TampuraPolicy(config = cfg2, problem_spec = env2.problem_spec)
+
+        env1.state = copy.deepcopy(s)
+        env2.state = copy.deepcopy(s)
+        
+        b1=b01
+        b2=b02
+
+        assert env1.problem_spec.verify(store1)
+        assert env2.problem_spec.verify(store2)
+
+        save_config(planner1.config, planner1.config["save_dir"])
+        save_config(planner2.config, planner2.config["save_dir"])
+
+        history1 = RolloutHistory(planner1.config)
+        history2 = RolloutHistory(planner2.config)
+
+        st = time.time()
+        for step in range(100):
+
+            # robot 1 acts
+            env1.state = copy.deepcopy(env2.state) # important!!
+            s1 = copy.deepcopy(env1.state)
+            b1.next_actions = s1.next_actions # important!!
+            a_b1 = b1.abstract(store1)
+            reward1 = env1.problem_spec.get_reward(a_b1, store1)
+            
+            if reward1:
+                print("goal achieved")
+                break  
+            
+            logging.info("\n robot 1 ")
+            logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+            if "s" in planner1.print_options:
+                logging.info("State: " + str(s1))
+            if "b" in planner1.print_options:
+                logging.info("Belief: " + str(b1))
+            if "ab" in planner1.print_options:
+                logging.info("Abstract Belief: " + str(a_b1))
+            if "r" in planner1.print_options:
+                logging.info("Reward: " + str(reward1))
+            
+            
+            action1, info1, store1 = planner1.get_action(b1, store1) # should only call effects functions!!??
+            
+            
+            
+            if action1.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
+                bp1 = copy.deepcopy(b1)
+                observation1 = None
                 
+                # replace previous action with nothing 
+                for ac in s.next_actions:
+                    name,args = ac.split("-")
+                    args=args.split("%")
+                    if args[0] != ROBOTS[0]: # other agent
+                        s.next_actions.remove(ac)
+                        s.next_actions.append("nothing_action-"+args[0])
+                
+                continue 
+            else:
+                if "a" in planner1.print_options:
+                    logging.info("Action: " + str(action1))
+
+                observation1= env1.step(action1, b1, store1) # should call execute function
+                bp1 = b1.update(action1, observation1, store1)
+
+                if planner1.config["vis"]:
+                    env1.vis_updated_belief(bp1, store1)
+
+            a_bp1 = bp1.abstract(store1)
+            history1.add(s1, b1, a_b1, action1, observation1, reward1, info1, store1, time.time() - st)
+
+            reward1 = env1.problem_spec.get_reward(a_bp1, store1)
+            
+            if "o" in planner1.print_options:
+                logging.info("Observation: " + str(observation1))
+            if "sp" in planner1.print_options:
+                logging.info("Next State: " + str(env1.state))
+            if "bp" in planner1.print_options:
+                logging.info("Next Belief: " + str(bp1))
+            if "abp" in planner1.print_options:
+                logging.info("Next Abstract Belief: " + str(a_bp1))
+            if "rp" in planner1.print_options:
+                logging.info("Next Reward: " + str(reward1))
+
+            # update the belief
+            b1 = bp1
+            
+            # robot 2 acts
+            env2.state = copy.deepcopy(env1.state) # important!!
+            s2 = copy.deepcopy(env2.state)
+            b2.next_actions = s2.next_actions # important!!
+            a_b2 = b2.abstract(store2)
+            reward2 = env2.problem_spec.get_reward(a_b2, store2)
+            
+            if reward2:
+                print("goal achieved")
+                break  
+
+            logging.info("\n robot 2 ")
+            logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+            if "s" in planner2.print_options:
+                logging.info("State: " + str(s2))
+            if "b" in planner1.print_options:
+                logging.info("Belief: " + str(b2))
+            if "ab" in planner1.print_options:
+                logging.info("Abstract Belief: " + str(a_b2))
+            if "r" in planner1.print_options:
+                logging.info("Reward: " + str(reward2))
+            
+            
+            
+            action2, info2, store2 = planner2.get_action(b2, store2) # should only call effects functions!!??
+            
+            
+            
+
+            if action2.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
+                bp2 = copy.deepcopy(b2)
+                observation2 = None
+                
+                # replace previous action with nothing 
+                for ac in s.next_actions:
+                    name,args = ac.split("-")
+                    args=args.split("%")
+                    if args[0] != ROBOTS[1]:
+                        s.next_actions.remove(ac)
+                        s.next_actions.append("nothing_action-"+args[0])
+                
+                continue 
+            else:
+                if "a" in planner2.print_options:
+                    logging.info("Action: " + str(action2))
+                observation2= env2.step(action2, b2, store2) # should call execute function
+                bp2 = b2.update(action2, observation2, store2)
+
+                if planner2.config["vis"]:
+                    env2.vis_updated_belief(bp2, store2)
+
+            a_bp2 = bp2.abstract(store2)
+            history2.add(s2, b2, a_b2, action2, observation2, reward2, info2, store2, time.time() - st)
+
+            reward2 = env2.problem_spec.get_reward(a_bp2, store2)
+            
+            if "o" in planner2.print_options:
+                logging.info("Observation: " + str(observation2))
+            if "sp" in planner2.print_options:
+                logging.info("Next State: " + str(env2.state))
+            if "bp" in planner2.print_options:
+                logging.info("Next Belief: " + str(bp2))
+            if "abp" in planner2.print_options:
+                logging.info("Next Abstract Belief: " + str(a_bp2))
+            if "rp" in planner2.print_options:
+                logging.info("Next Reward: " + str(reward2))
+
+            # update the belief
+            b2 = bp2
+
+        history1.add(env1.state, bp1, a_bp1, None, None, reward1, info1, store1, time.time() - st)
+        history2.add(env2.state, bp2, a_bp2, None, None, reward2, info2, store2, time.time() - st)
+            
+        logging.info("=" * 20)
+
+        env1.wrapup()
+        env2.wrapup()
+
+        if not planner1.config["real_execute"]:
+            save_run_data(history1, planner1.config["save_dir"])
+
+        if not planner2.config["real_execute"]:
+            save_run_data(history2, planner2.config["save_dir"])
+        
+      
                 
 
 
