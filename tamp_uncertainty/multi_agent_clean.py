@@ -33,9 +33,9 @@ from tampura.config.config import load_config, setup_logger
 
 # TODO: different training and execution scenarios, study the MDPs
 # 0: human, 1: random, 2: inactive
-TRAIN = 1
+TRAIN = 0
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 1
+EXEC = 0
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
@@ -75,10 +75,10 @@ class EnvObservation(Observation):
 class EnvBelief(Belief):
     def __init__(self, holding={},obj_regions={},clean=[],next_actions=[]):
         # true state
-        self.holding = holding
-        self.obj_regions = obj_regions
-        self.clean = clean
-        self.next_actions = next_actions
+        self.holding = holding.copy()
+        self.obj_regions = obj_regions.copy()
+        self.clean = clean.copy()
+        self.next_actions = next_actions.copy()
         
 
     def update(self, a, o, s):
@@ -86,8 +86,8 @@ class EnvBelief(Belief):
         # dictionary mutations are IN-PLACE!!! use .copy()!!
         holding = self.holding.copy() 
         obj_regions = self.obj_regions.copy()
-        clean = self.clean
-        next_actions = self.next_actions
+        clean = self.clean.copy()
+        next_actions = self.next_actions.copy()
         
         
         # get argument index for ego agent
@@ -173,6 +173,8 @@ def get_next_actions_execute(a, b, store):
         print("ego attempts action ..")
         print(a_ego_name)
         print(a.args[n_args:])
+        print("from")
+        print(b.abstract(store).items)
     
     
     next_actions=[]
@@ -241,10 +243,25 @@ def get_next_actions_execute(a, b, store):
 def get_next_actions_effects(a, b, store): # human operator : tedious, kind of works
     
     
-    next_actions = []
+    a_other_name,a_ego_name = a.name.split("*")
     
+    if a_other_name == "clean_other": # robot, region
+        n_args = 2
+    elif a_other_name == "nothing_other":
+        n_args = 1
+    else: # robot, object, region
+        n_args = 3
+    
+    if EXEC == 0: # human  
+        print("ego attempts action ..")
+        print(a_ego_name)
+        print(a.args[n_args:])
+        print("from")
+        print(b.abstract(store).items)
+        
+    
+    next_actions=[]
     others = []
-    
     for entity in store.als_type:
         if store.als_type[entity]=="robot":
             if Atom("is_ego",[entity]) not in store.certified:
@@ -306,6 +323,9 @@ def pick_other_execute_fn(a, b, s, store):
     holding = b.holding.copy()
     
     if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
         while True:
             print("Was pick executed?")
             choice = input("0:No / 1:Yes")
@@ -339,6 +359,9 @@ def pick_other_effects_fn(a, b, store):
     holding = b.holding.copy()
     
     if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
         while True:
             print("Was pick executed?")
             choice = input("0:No / 1:Yes")
@@ -362,6 +385,9 @@ def place_other_execute_fn(a, b, s, store):
     
     
     if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
         while True:
             print("Was place executed?")
             choice = input("0:No / 1:Yes")
@@ -395,6 +421,9 @@ def place_other_effects_fn(a, b, store):
     holding = b.holding.copy()
     
     if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
         while True:
             print("Was place executed?")
             choice = input("0:No / 1:Yes")
@@ -416,6 +445,9 @@ def clean_other_execute_fn(a, b, s, store):
     clean = b.clean.copy()
     
     if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:2])
         while True:
             print("Was clean executed?")
             choice = input("0:No / 1:Yes")
@@ -446,6 +478,9 @@ def clean_other_effects_fn(a, b, store):
     clean = b.clean.copy()
     
     if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:2])
         while True:
             print("Was clean executed?")
             choice = input("0:No / 1:Yes")
@@ -495,6 +530,8 @@ def joint_execute_fn(a, b, s, store):
         s,obs = place_other_execute_fn(a, b, s, store)
     elif a_other_name == "clean_other":
         s,obs = clean_other_execute_fn(a, b, s, store)
+    else: 
+        pass
         
     if a_ego_name == "pick_ego":
         if s.obj_regions[args_ego[1]] == args_ego[2]: 
@@ -509,6 +546,8 @@ def joint_execute_fn(a, b, s, store):
         if args_ego[1] not in obj_regions.values():
             if random.random()<0.9:
                 s.clean.append(args_ego[1])
+    else: 
+        pass
     
     
     # next action of ego
@@ -564,6 +603,8 @@ def joint_effects_fn(a, b, store):
         obj_regions,holding = place_other_effects_fn(a, b, store)
     elif a_other_name == "clean_other":
         clean = clean_other_effects_fn(a, b, store)
+    else: 
+        pass
         
 
     if a_ego_name == "pick_ego":
@@ -579,14 +620,16 @@ def joint_effects_fn(a, b, store):
         if args_ego[1] not in obj_regions.values():
             if random.random()<0.9:
                 clean.append(args_ego[1])
+    else: 
+        pass
     
     
     # resulting state
     b_temp = copy.deepcopy(b)
-    obs = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions)
-    b_temp = b_temp.update(a,obs,store)   
-    next_actions = get_next_actions_effects(a, b_temp, store)
-    
+    next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief
+    # obs = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions) 
+    # b_temp = b_temp.update(a,obs,store)   
+
     o = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions,next_actions=next_actions)    
     new_belief=b.update(a,o,store)
     return AbstractBeliefSet.from_beliefs([new_belief], store)        
@@ -854,8 +897,8 @@ def main():
     cfg["print_options"] = "ab,a,o,r"
     cfg["vis_graph"] = True
     # batch size 100, num samples 500 num skeletons 100 works best!!
-    cfg["batch_size"] = 500 #100 
-    cfg["num_samples"] = 500 #500
+    cfg["batch_size"] = 10 #100 
+    cfg["num_samples"] = 10 #500
     # overcome optimism for inactive agent
     # cfg["batch_size"] = 100 #100 
     # cfg["num_samples"] = 5000 #500
