@@ -162,10 +162,13 @@ class TampuraPolicy(Policy):
             if sol.policy[ab] in applicable_actions:
                 selected_action = sol.policy[ab]
             else:
-                logging.warning(
-                    f"WARNING: Taking a random action because {str(sol.policy[ab])} is not feasible."
-                )
-                selected_action = random.choice(applicable_actions)
+                if len(applicable_actions)>0: # modified
+                    logging.warning(
+                        f"WARNING: Taking a random action because {str(sol.policy[ab])} is not feasible."
+                    )
+                    selected_action = random.choice(applicable_actions)
+                else: # no applicable actions from that state
+                    selected_action = Action("no-op")
 
         self.envelope.append((ab, selected_action))
 
