@@ -33,6 +33,12 @@ from tampura.config.config import load_config, setup_logger
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
+# TODO: different training and execution scenarios, study the MDPs
+# 0: human, 1: random, 2: inactive
+TRAIN = 1
+# 0: human, 1: random, 2: inactive, 3: nominal
+EXEC = 0
+
 ROB = "robot_"
 REG = "region_"
 MUG = "mug"
@@ -46,8 +52,8 @@ ROB_REGIONS = {ROBOTS[0]:REGIONS[-1],ROBOTS[1]:REGIONS[-1]} # long horizon: comb
 # ROB_REGIONS = {ROBOTS[0]:REGIONS[1],ROBOTS[1]:REGIONS[0]} # short horizon: kind of works?
 OBJ_REGIONS={MUG:REGIONS[0]}
 # probability of success for open/close by ego
-OPEN_EGO = 0.2
-CLOSE_EGO = 0.3
+OPEN_EGO = 0.9
+CLOSE_EGO = 0.9
 # higher num_samples needed to learn true transition model
 
 # Test 
@@ -90,7 +96,7 @@ class EnvBelief(Belief):
         open_door = self.open_door
         rob_regions = self.rob_regions.copy()
         obj_regions = self.obj_regions.copy()
-        next_actions = self.next_actions
+        next_actions = self.next_actions.copy()
         
         
         # get argument index for ego agent
@@ -106,75 +112,29 @@ class EnvBelief(Belief):
             
         a_ego_args = a.args[nargs_other:]
         
+        # the previous values of variables change depending on the action
         
-        # special cases
-        # case 1: place, pick
-        if a_other_name == "place_other" and a_ego_name == "pick_ego":
-            
-            holding = o.holding
-            obj_regions = o.obj_regions
-            
-        # case 2: open, pick
-        # case 3: open, place
-        elif (a_other_name == "open_other") and (a_ego_name == "pick_ego" or a_ego_name == "place_ego"):
-            
+        # action_other
+        if a_other_name == "pick_other" or a_other_name == "place_other":
+            holding[a.args[0]] = o.holding[a.args[0]]
+            obj_regions[a.args[1]] = o.obj_regions[a.args[1]]
+        elif a_other_name == "transit_other" or a_other_name == "transfer_other":
+            rob_regions[a.args[0]] = o.rob_regions[a.args[0]]
+        elif a_other_name == "open_other" or a_other_name == "close_other":
             open_door = o.open_door
-            obj_regions = o.obj_regions
-            holding = o.holding
-            
-        # case 4: open, close
-        # case 7: close, open
-        elif (a_other_name == "open_other" and a_ego_name == "close_ego") or (a_other_name == "close_other" and a_ego_name == "open_ego"):
-            
+        else: 
+            pass
+        
+        # action ego
+        if a_ego_name == "pick_ego" or a_ego_name == "place_ego":
+            holding[a_ego_args[0]] = o.holding[a_ego_args[0]]
+            obj_regions[a_ego_args[1]] = o.obj_regions[a_ego_args[1]]
+        elif a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
+            rob_regions[a_ego_args[0]] = o.rob_regions[a_ego_args[0]]
+        elif a_ego_name == "open_ego" or a_ego_name == "close_ego":
             open_door = o.open_door
-        
-        # case 5: close, pick
-        # case 6: close, place
-        elif a_other_name == "close_other" and (a_ego_name == "pick_ego" or a_ego_name == "place_ego"):
-            
-            open_door = o.open_door
-            obj_regions = o.obj_regions
-            holding = o.holding
-        
-        
-        # others 
-        else: # ego: non-deterministic, other: non-deterministic
-            
-            # ego actions
-            if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego": # update NOT taking place!!!
-                rob_regions[a_ego_args[0]] = o.rob_regions[a_ego_args[0]]
-                
-                    
-            elif a_ego_name == "pick_ego" or a_ego_name == "place_ego":
-                holding[a_ego_args[0]] = o.holding[a_ego_args[0]]
-                obj_regions[a_ego_args[1]] = o.obj_regions[a_ego_args[1]]
-            
-            elif a_ego_name == "open_ego" or a_ego_name == "close_ego": # open or shut door
-                open_door = o.open_door
-                
-            elif a_ego_name == "nothing_ego":
-                pass
-            
-            # other agent's actions     
-            if a_other_name == "transit_other" or a_other_name == "transfer_other":
-                # assumption: transit is only confusable with transit or noop
-                # assumption: transfer is only confusable with transfer or noop
-                rob_regions[a.args[0]] = o.rob_regions[a.args[0]]
-            
-            elif a_other_name == "pick_other" or a_other_name == "place_other":
-                # assumption: pick is only confusable with pick or noop
-                # assumption: place is only confusable with place or noop
-                holding[a.args[0]] = o.holding[a.args[0]]
-                obj_regions[a.args[1]] = o.obj_regions[a.args[1]]
-            
-            elif a_other_name == "open_other" or a_other_name == "close_other":
-                # assumption: open is only confusable with open or noop
-                # assumption: close is only confusable with close or noop
-                open_door = o.open_door
-            
-            elif a_other_name == "nothing_other":
-                # no change in state
-                pass
+        else: 
+            pass
            
         next_actions = o.next_actions
             
@@ -221,66 +181,62 @@ def get_next_actions_execute(a, b, store): # human operator : tedious, kind of w
     else:
         n_args = 3
         
-    print("ego attempts action ..")
-    print(a_ego_name)
-    print(a.args[n_args:])
-    print("... belief ...")
-    b_temp=copy.deepcopy(b) 
-    print(b_temp.abstract(store))
-    print("applicable actions...")
+    if EXEC == 0: # human  
+        print("ego attempts action ..")
+        print(a_ego_name)
+        print(a.args[n_args:])
+        print("from")
+        print(b.abstract(store).items)
+    
     
     next_actions=[]
     others = []
+    
     for entity in store.als_type:
         if store.als_type[entity]=="robot":
             if Atom("is_ego",[entity]) not in store.certified:
                 others.append(entity)
     
-    for rob in others: # one list of outcomes per robot
+    for rob in others: 
         
-        ab = b_temp.abstract(store)
         applicable_actions_rob=[]
-        # nothing is always applicable
-        applicable_actions_rob.append(Atom("nothing_action",[rob]))
+        
         for reg in REGIONS:
             for obj in OBJ_REGIONS.keys():
-                if Atom("holding",[rob,obj]) in ab.items: # robot is holding an object: it can transfer or place
-                    if Atom("in_rob",[rob,reg]) not in ab.items:
-                        applicable_actions_rob.append(Atom("transfer_action",[rob,obj,reg]))
-                    else:
-                        if Atom("stable",[obj,reg]) in store.certified:
-                            if (reg==REGIONS[0] and Atom("open",[DOOR]) in ab.items) or reg!=REGIONS[0]: # region accessibility
-                                applicable_actions_rob.append(Atom("place_action",[rob,obj]))
-                else: # robot is not holding an object: it can transit, open, pick, depending on where it is and where the objects are
-                    if Atom("in_rob",[rob,reg]) in ab.items: # cannot move to reg
-                        if reg==REGIONS[1]:
-                            if Atom("open",[DOOR]) not in ab.items: 
-                                applicable_actions_rob.append(Atom("open_action",[rob]))
-                            else:
-                                applicable_actions_rob.append(Atom("close_action",[rob]))
-                        if Atom("in_obj",[obj,reg]) in ab.items and Atom("in_rob",[rob,reg]):
-                            # accessibility of obj
-                            if (reg==REGIONS[0] and Atom("open",[DOOR]) in ab.items) or (reg!=REGIONS[0]):
-                                applicable_actions_rob.append(Atom("pick_action",[rob,obj]))
-                    else: # can move to reg
-                        applicable_actions_rob.append(Atom("transit_action",[rob,reg]))
+                applicable_actions_rob.append(Atom("nothing_action",[rob]))
+                applicable_actions_rob.append(Atom("transfer_action",[rob,obj,reg]))
+                applicable_actions_rob.append(Atom("transit_action",[rob,reg]))
+                applicable_actions_rob.append(Atom("pick_action",[rob,obj]))
+                applicable_actions_rob.append(Atom("place_action",[rob,obj]))
+                applicable_actions_rob.append(Atom("open_action",[rob]))
+                applicable_actions_rob.append(Atom("close_action",[rob,obj]))
         
-        while True:
-            
-            for i,act in enumerate(applicable_actions_rob):
-                print(str(i)+". "+act.pred_name+str(act.args))
+        if EXEC == 0: # human        
+        
+            while True:
                 
-            choice = input("choose an action \n")
-            if int(choice)>=0 and int(choice)<len(applicable_actions_rob):
-                break
-            else:
-                print("invalid choice, enter again")
+                for i,act in enumerate(applicable_actions_rob):
+                    print(str(i)+". "+act.pred_name+str(act.args))
+                    
+                choice = input("choose an action \n")
+                if int(choice)>=0 and int(choice)<len(applicable_actions_rob):
+                    break
+                else:
+                    print("invalid choice, enter again")
+            
+            observed_action_rob = applicable_actions_rob[int(choice)] 
+            
+        elif EXEC == 1: # random 
+            
+            observed_action_rob = random.choice(applicable_actions_rob)
+            
+        elif EXEC == 2: #inactive
+            
+            observed_action_rob = Atom("nothing_action",[rob])
+            
           
-        
-        
-        observed_action_rob = applicable_actions_rob[int(choice)]   
         print(observed_action_rob)
-        
+            
         name=observed_action_rob.pred_name
         args=observed_action_rob.args
         
@@ -297,17 +253,28 @@ def get_next_actions_execute(a, b, store): # human operator : tedious, kind of w
             
         next_actions.append(a_other)
             
-    
     return next_actions # for all the agents
 def get_next_actions_effects(a, b, store): # human operator : tedious, kind of works
     
-    b_temp=copy.deepcopy(b) 
-    # b_temp=b_temp.update(a,None,None)
     
-    next_actions = []
+    a_other_name,a_ego_name = a.name.split("*")
     
+    if a_other_name == "transfer_other":
+        n_args=4
+    elif a_other_name == "open_other" or a_other_name == "close_other" or a_other_name == "nothing_other":
+        n_args = 1
+    else:
+        n_args = 3
+    
+    if TRAIN == 0: # human  
+        print("ego attempts action ..")
+        print(a_ego_name)
+        print(a.args[n_args:])
+        print("from")
+        print(b.abstract(store).items)
+    
+    next_actions=[]
     others = []
-    
     for entity in store.als_type:
         if store.als_type[entity]=="robot":
             if Atom("is_ego",[entity]) not in store.certified:
@@ -315,52 +282,50 @@ def get_next_actions_effects(a, b, store): # human operator : tedious, kind of w
     
     for rob in others: # one list of outcomes per robot
         
-        ab = b_temp.abstract(store)
+        ab = b.abstract(store)
         applicable_actions_rob=[]
         # nothing is always applicable
-        applicable_actions_rob.append(Atom("nothing_action",[rob]))
         
         observed_action_rob = ""
+        
 
         for reg in REGIONS:
             for obj in OBJ_REGIONS.keys():
-                if Atom("holding",[rob,obj]) in ab.items: # robot is holding an object: it can transfer or place
-                    if Atom("in_rob",[rob,reg]) not in ab.items:
-                        applicable_actions_rob.append(Atom("transfer_action",[rob,obj,reg]))
-                    else:
-                        if Atom("stable",[obj,reg]) in store.certified:
-                            if (reg==REGIONS[0] and Atom("open",[DOOR]) in ab.items) or reg!=REGIONS[0]: # region accessibility
-                                applicable_actions_rob.append(Atom("place_action",[rob,obj]))
-                                observed_action_rob=Atom("place_action",[rob,obj])
-                else: # robot is not holding an object: it can transit, open, pick, depending on where it is and where the objects are
-                    if Atom("in_rob",[rob,reg]) in ab.items: # cannot move to reg
-                        if reg==REGIONS[1]:
-                            if Atom("open",[DOOR]) not in ab.items: # door
-                                applicable_actions_rob.append(Atom("open_action",[rob]))
-                                observed_action_rob=Atom("open_action",[rob])
-                                
-                            else:
-                                applicable_actions_rob.append(Atom("close_action",[rob]))
-                                observed_action_rob=Atom("close_action",[rob])
-                                
-                        if Atom("in_obj",[obj,reg]) in ab.items and Atom("in_rob",[rob,reg]):
-                            # accessibility of obj
-                            if (reg==REGIONS[0] and Atom("open",[DOOR]) in ab.items) or (reg!=REGIONS[0]):
-                                applicable_actions_rob.append(Atom("pick_action",[rob,obj]))
-                                observed_action_rob=Atom("pick_action",[rob,obj])
-                                
-                    else: # can move to reg
-                        applicable_actions_rob.append(Atom("transit_action",[rob,reg]))
-
-        # simulation: if pick, place, open, close are applicable, the other agent tends to perform that action
-        if observed_action_rob == "":
-            observed_action_rob = random.choice(applicable_actions_rob)
-        else: # 70% of time "goal directed" actions, 30% of the time random
-            if random.random()<0.3:
-                observed_action_rob = random.choice(applicable_actions_rob)
                 
-        #observed_action_rob = Atom("nothing_action",[rob]) # INACTIVE OTHER AGENT!!!
+                applicable_actions_rob.append(Atom("nothing_action",[rob]))
+                applicable_actions_rob.append(Atom("transfer_action",[rob,obj,reg]))
+                applicable_actions_rob.append(Atom("transit_action",[rob,reg]))
+                applicable_actions_rob.append(Atom("pick_action",[rob,obj]))
+                applicable_actions_rob.append(Atom("place_action",[rob,obj]))
+                applicable_actions_rob.append(Atom("open_action",[rob]))
+                applicable_actions_rob.append(Atom("close_action",[rob,obj]))
+                
         
+        if TRAIN == 0: # human 
+            while True:
+                
+                for i,act in enumerate(applicable_actions_rob):
+                    print(str(i)+". "+act.pred_name+str(act.args))
+                    
+                choice = input("choose an action \n")
+                if int(choice)>=0 and int(choice)<len(applicable_actions_rob):
+                    break
+                else:
+                    print("invalid choice, enter again")
+            
+            observed_action_rob = applicable_actions_rob[int(choice)] 
+            print(observed_action_rob)
+        elif TRAIN == 1: # random 
+            # simulation: if pick, place, open, close are applicable, the other agent tends to perform that action
+            if observed_action_rob == "":
+                observed_action_rob = random.choice(applicable_actions_rob)
+            else: # 70% of time "goal directed" actions, 30% of the time random
+                if random.random()<0.3:
+                    observed_action_rob = random.choice(applicable_actions_rob)
+        elif TRAIN == 2: # inactive agent
+            observed_action_rob = Atom("nothing_action",[rob])
+        
+                        
         name=observed_action_rob.pred_name
         args=observed_action_rob.args
         
@@ -385,27 +350,94 @@ def transit_transfer_other_execute_fn(a, b, s, store):
     
     rob_regions = b.rob_regions.copy()    
     
+    if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
+            
+        while True:
+            print("True region of movement?")
+            for i,reg in enumerate(REGIONS):
+                print(str(i)+". "+reg)
+            choice = input("Pick region")
+            if int(choice)>=0 and int(choice)<len(REGIONS):
+                break
+            
+        reg = REGIONS[int(choice)]
+    
+    elif EXEC == 1: # random
+        
+        if random.random()<0.9:
+            reg = a.args[2]
+        else:
+            reg = random.choice(REGIONS)
+    
+    
+        
+    if EXEC ==0 or EXEC == 1: # human or random; no change to state for nominal!
+        s.rob_regions[a.args[0]] = reg
+
+
     rob_regions[a.args[0]] = s.rob_regions[a.args[0]]
     
     return s, EnvObservation(rob_regions=rob_regions)
 def transit_transfer_other_effects_fn(a, b, store):
-    p = [] # sample probabilities for weighting
-    for reg in REGIONS:
-        if reg == a.args[2]:
-            p.append(0.7) # random outcome
-            # p.append(1.0) # deterministic outcome
+    
+    rob_regions = b.rob_regions.copy()
+    
+    if TRAIN == 0: # human
+        
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
+        while True:
+            print("True region of movement?")
+            for i,reg in enumerate(REGIONS):
+                print(str(i)+". "+reg)
+            choice = input("Pick region")
+            if int(choice)>=0 and int(choice)<len(REGIONS):
+                break
+        reg = REGIONS[choice]
+        print(reg)
+        
+    elif TRAIN == 1: # random
+        
+        if random.random()<0.9:
+            reg = a.args[2]
         else:
-            p.append(0.15) # random outcome
-            # p.append(0.0) # deterministic outcome
-    rob_regions = b.rob_regions.copy()    
-    rob_regions[a.args[0]] = random.choice(REGIONS)#np.random.choice(np.array(ROB_REGIONS),p=np.array(p)) # weighted probabilities
+            reg = random.choice(REGIONS)
+     
+    rob_regions[a.args[0]] = reg
     
     return rob_regions
     
-def pick_other_execute_fn(a, b, s, store):        
+def pick_other_execute_fn(a, b, s, store):
     
     obj_regions = b.obj_regions.copy()
     holding = b.holding.copy()
+    
+    if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
+        while True:
+            print("Was pick executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        picked = int(choice) == 1
+    
+    elif EXEC == 1: # random
+        
+        picked = random.random()<0.9
+    
+    
+        
+    if EXEC ==0 or EXEC == 1: # human or random; no change to state for nominal!
+        if picked: 
+            s.holding[a.args[0]] = [a.args[1]]
+            s.obj_regions[a.args[1]] = ""
+
             
     if s.obj_regions[a.args[1]] == "" and s.holding[a.args[0]] == [a.args[1]]: # picked
         print("picked")
@@ -414,23 +446,59 @@ def pick_other_execute_fn(a, b, s, store):
     else:
         print("not picked")
     
-    return s, EnvObservation(obj_regions=obj_regions,holding=holding)
+    return s, EnvObservation(obj_regions=obj_regions,holding=holding)    
 def pick_other_effects_fn(a, b, store):
     
     obj_regions = b.obj_regions.copy()
     holding = b.holding.copy()
     
-    # if random.random()<=1.0: # deterministic outcome
-    if random.random()<=0.9: # picked # tweak this number to have a higher probability of pick
+    if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
+        while True:
+            print("Was pick executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        picked = int(choice)==1
+        print(picked)
+    elif TRAIN == 1: # random
+        picked = random.random()<=0.9
+                            
+    if picked: 
         obj_regions[a.args[1]] = ""
         holding[a.args[0]] = [a.args[1]]
     
     return obj_regions,holding
     
 def place_other_execute_fn(a, b, s, store):
-    
     obj_regions = b.obj_regions.copy()
     holding = b.holding.copy()
+    
+    
+    if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
+        while True:
+            print("Was place executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        placed = int(choice) == 1
+    
+    elif EXEC == 1: # random
+        
+        placed = random.random()<0.9
+    
+    
+        
+    if EXEC ==0 or EXEC == 1: # human or random; no change to state for nominal!
+        if placed: 
+            s.holding[a.args[0]] = []
+            s.obj_regions[a.args[1]] = a.args[2]
+
     
     if s.obj_regions[a.args[1]] == a.args[2] and s.holding[a.args[0]] == []: # placed
         print("placed")
@@ -445,63 +513,137 @@ def place_other_effects_fn(a, b, store):
     obj_regions = b.obj_regions.copy()
     holding = b.holding.copy()
     
-    # if random.random()<=1.0: # deterministic outcome
-    if random.random()<=0.9: # placed # tweak this number to have a higher probability of place
+    if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:3])
+        while True:
+            print("Was place executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        placed = int(choice)==1
+        print(placed)
+    elif TRAIN == 1: # random
+        placed = random.random()<=0.9
+    
+    if placed: 
         obj_regions[a.args[1]] = a.args[2]
         holding[a.args[0]] = []
     
     return obj_regions,holding
-    # o = EnvObservation(obj_regions=obj_regions,holding=holding)
-    # new_belief = b.update(a, o, store)
-    # return AbstractBeliefSet.from_beliefs([new_belief], store)
 
 def open_other_execute_fn(a, b, s, store):
     
     open_door = b.open_door
     
-    if s.open_door: # opened
+    if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:2])
+        while True:
+            print("Was open executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        opened = int(choice) == 1
+    
+    elif EXEC == 1: # random
+        
+        opened = random.random()<0.9
+    
+    
+        
+    if EXEC ==0 or EXEC == 1: # human or random; no change to state for nominal!
+        if opened: 
+            s.open_door = True
+
+    if s.open_door:
         print("opened")
-        open_door = True
+        open_door = True  
     else:
-        print("not opened")
+        print("not opened")  
+    
     
     return s, EnvObservation(open_door=open_door)
 def open_other_effects_fn(a, b, store):
     
     open_door = b.open_door
     
-    # if random.random()<=1.0: # deterministic outcome
-    if random.random()<=0.8:
+    if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:2])
+        while True:
+            print("Was open executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        opened = int(choice)==1
+        print(opened)
+    elif TRAIN == 1: # random
+        opened = random.random()<=0.9
+    
+    if opened: 
         open_door = True
-        
-    return open_door    
-    # o = EnvObservation(open_door=open_door)
-    # new_belief = b.update(a, o, store)
-    # return AbstractBeliefSet.from_beliefs([new_belief], store)
+    
+    return open_door
 
 def close_other_execute_fn(a, b, s, store):
 
     open_door = b.open_door
     
-    if not s.open_door: # closed
+    if EXEC == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:2])
+        while True:
+            print("Was close executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        closed = int(choice) == 1
+    
+    elif EXEC == 1: # random
+        
+        closed = random.random()<0.9
+    
+    
+        
+    if EXEC == 0 or EXEC == 1: # human or random; no change to state for nominal!
+        if closed: 
+            s.open_door = False
+
+    if not s.open_door:
         print("closed")
-        open_door = False
+        open_door = False  
     else:
-        print("not closed")
+        print("not closed")  
+    
     
     return s, EnvObservation(open_door=open_door)
 def close_other_effects_fn(a, b, store):
-    
+
     open_door = b.open_door
     
-    # if random.random()<=1.0: # deterministic outcome
-    if random.random()<=0.8:
+    if TRAIN == 0: # human
+        a_other_name,a_ego_name = a.name.split("*")
+        print(a_other_name)
+        print(a.args[:2])
+        while True:
+            print("Was close executed?")
+            choice = input("0:No / 1:Yes")
+            if int(choice)==0 or int(choice)==1:
+                break
+        closed = int(choice)==1
+        print(closed)
+    elif TRAIN == 1: # random
+        closed = random.random()<=0.9
+    
+    if closed: 
         open_door = False
-        
+    
     return open_door
-    # o = EnvObservation(open_door=open_door)
-    # new_belief = b.update(a, o, store)
-    # return AbstractBeliefSet.from_beliefs([new_belief], store)    
 
 # joint actions
 def joint_execute_fn(a, b, s, store):
@@ -531,191 +673,80 @@ def joint_execute_fn(a, b, s, store):
             s.next_actions.remove(na)
     
 
-    # special cases
-    # remember: next actions!!
-    # case 1: place, pick
-    if a_other_name == "place_other" and a_ego_name == "pick_ego": 
-        print("special case")
-        print(a.name)
+    # other agent
+    if a_other_name == "transit_other" or a_other_name == "transfer_other":
+        s,obs = transit_transfer_other_execute_fn(a, b, s, store)
+    elif a_other_name == "pick_other":
+        s,obs = pick_other_execute_fn(a, b, s, store)
+    elif a_other_name == "place_other":
         s,obs = place_other_execute_fn(a, b, s, store)
-        obj_regions = s.obj_regions
-        if obj_regions[a.args[1]] == a.args[2]: # other agent placed the object
-            if a.args[2] == REGIONS[0]: # cabinet
-                pick_ego_sim = CABINET_PICK_EGO_SIM
-            else:
-                pick_ego_sim = SIMPLE_PICK_EGO_SIM
-            if random.random()<pick_ego_sim: # 90% success
-                holding[a.args[3]] = [a.args[1]]
-                obj_regions[a.args[1]] = ""
-                # update state
-                s.holding[a.args[3]] = [a.args[1]]
-                s.obj_regions[a.args[1]] = ""
-            
-    # case 2: open, pick
-    elif a_other_name == "open_other" and a_ego_name == "pick_ego":
-        
+    elif a_other_name == "open_other":
         s,obs = open_other_execute_fn(a, b, s, store)
-        open_door = s.open_door
-        
-        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # in mug and door open or not in mug!
-            if a.args[2] == REGIONS[0]: # cabinet
-                pick_ego_sim = CABINET_PICK_EGO_SIM
-            else:
-                pick_ego_sim = SIMPLE_PICK_EGO_SIM
-            if random.random()<pick_ego_sim: # 90% success
-                holding[a.args[1]] = [a.args[2]]
-                obj_regions[a.args[2]] = ""
-                # update state
-                s.holding[a.args[1]] = [a.args[2]]
-                s.obj_regions[a.args[2]] = ""
-        
-            
-    # case 3: open, place
-    elif a_other_name == "open_other" and a_ego_name == "place_ego":
-
-        s,obs = open_other_execute_fn(a, b, s, store)
-        open_door = s.open_door
-        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # in mug and door open or not in mug!
-            if random.random()<0.9: # 90% success
-                holding[a.args[1]] = []
-                obj_regions[a.args[2]] = a.args[3]
-                # update state
-                s.holding[a.args[1]] = []
-                s.obj_regions[a.args[2]] = a.args[3]
-        
-        
-    # case 4: open, close
-    elif a_other_name == "open_other" and a_ego_name == "close_ego":
-
-        s,obs = open_other_execute_fn(a, b, s, store)
-        open_door = s.open_door
-        if open_door and random.random()<CLOSE_EGO: # 90% success
-            open_door = False
-            # update state
-            s.open_door = open_door
-            
-    # case 5: close, pick
+    elif a_other_name == "close_other":
+        s,obs = close_other_execute_fn(a, b, s, store)
+    else:
+        pass
     
-    elif a_other_name == "close_other" and a_ego_name == "pick_ego":
+    # ego agent
+    if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
+    
+        if random.random()<0.9:
 
-        s,obs = close_other_execute_fn(a, b, s, store)
-        open_door = obs.open_door
-        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # in mug and door open or not in mug!
+            s.rob_regions[args_ego[0]] = args_ego[2]
+        
+        next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]+"%"+args_ego[2]
+        if a_ego_name == "transfer_ego":
+            next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]+"%"+ args_ego[3]+ "%"+args_ego[2]
+            
+    elif a_ego_name == "pick_ego":
+        
+        if (a.args[3] == REGIONS[0] and s.open_door) or a.args[3] != REGIONS[0]: # feasibility check
             if a.args[2] == REGIONS[0]: # cabinet
                 pick_ego_sim = CABINET_PICK_EGO_SIM
             else:
                 pick_ego_sim = SIMPLE_PICK_EGO_SIM
             if random.random()<pick_ego_sim: # 90% success
-                holding[a.args[1]] = [a.args[2]]
-                obj_regions[a.args[2]] = ""
-                # update state
-                s.holding[a.args[1]] = [a.args[2]]
-                s.obj_regions[a.args[2]] = ""
-        
-    # case 6: close, place
+                
+                s.holding[args_ego[0]] = [args_ego[1]]
+                s.obj_regions[args_ego[1]] = ""
+                
+        next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]+"%"+args_ego[1]
     
-    elif a_other_name == "close_other" and a_ego_name == "place_ego":
-
-        s,obs = close_other_execute_fn(a, b, s, store)
-        open_door = obs.open_door
-        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # in mug and door open or not in mug!
+    elif a_ego_name == "place_ego":
+        
+        if (a.args[3] == REGIONS[0] and s.open_door) or a.args[3] != REGIONS[0]: # feasibility check
+            
             if random.random()<0.9: # 90% success
-                holding[a.args[1]] = []
-                obj_regions[a.args[2]] = a.args[3]
-                # update state
-                s.holding[a.args[1]] = []
-                s.obj_regions[a.args[2]] = a.args[3]
-        
-    # case 7: close, open
-    elif a_other_name == "close_other" and a_ego_name == "open_ego":
-
-        s,obs = close_other_execute_fn(a, b, s, store)
-        open_door = s.open_door
-        if not open_door and random.random()<OPEN_EGO: 
-            open_door = True
-            # update state
-            s.open_door = open_door
-        
-    else: # rest
-        
-        # other: non-deterministic, ego: deterministic
-        
-        
-        if a_other_name == "transit_other" or a_other_name == "transfer_other":
-            s,obs = transit_transfer_other_execute_fn(a, b, s, store)
-            rob_regions[a.args[0]] = s.rob_regions[a.args[0]]
-             
-        elif a_other_name == "open_other":
-            s,obs = open_other_execute_fn(a, b, s, store)
-            open_door = s.open_door
-            
-            
-        elif a_other_name == "close_other":
-            s,obs = close_other_execute_fn(a, b, s, store)
-            open_door = s.open_door
-            
-            
-        elif a_other_name == "pick_other":
-            s,obs = pick_other_execute_fn(a, b, s, store)
-            obj_regions[a.args[1]] = s.obj_regions[a.args[1]]
-            holding[a.args[0]] = s.holding[a.args[0]]
-            
-            
-        elif a_other_name == "place_other":
-            s,obs = place_other_execute_fn(a, b, s, store)
-            obj_regions[a.args[1]] = s.obj_regions[a.args[1]]
-            holding[a.args[0]] = s.holding[a.args[0]]
-            
-        # ego: non-deterministic
-        
-        if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
-            if random.random()<0.9:
-                rob_regions[args_ego[0]] = args_ego[2]
-                # update state
-                s.rob_regions[args_ego[0]] = args_ego[2]
-        elif a_ego_name == "pick_ego":
-            if a.args[2] == REGIONS[0]: # cabinet
-                pick_ego_sim = CABINET_PICK_EGO_SIM
-            else:
-                pick_ego_sim = SIMPLE_PICK_EGO_SIM
-            if random.random()<pick_ego_sim:
-                holding[args_ego[0]] = [args_ego[1]]
-                obj_regions[args_ego[1]] = ""
-                # update state
-                s.holding[a.args[1]] = [a.args[2]]
-                s.obj_regions[a.args[2]] = ""
-        elif a_ego_name == "place_ego":
-            if random.random()<0.9:
-                holding[args_ego[0]] = []
-                obj_regions[args_ego[1]] = args_ego[2]
-                # update state
+                
                 s.holding[args_ego[0]] = []
                 s.obj_regions[args_ego[1]] = args_ego[2]
-        elif a_ego_name == "open_ego":
-            if random.random()<OPEN_EGO:
-                open_door = True
-                # update state
-                s.open_door = True
-        elif a_ego_name == "close_ego":
-            if random.random()<CLOSE_EGO:
-                open_door = False
-                # update state
-                s.open_door = False
-            
-    
-    # next action of ego
-    if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
-        next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]+"%"+args_ego[2]
-        # additional argument 
-        if a_ego_name == "transfer_ego":
-            next_action = next_action + "%" + args_ego[3]
-            
-    elif a_ego_name == "pick_ego" or a_ego_name == "place_ego":
+                
         next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]+"%"+args_ego[1]
         
+    elif a_ego_name == "open_ego":
+        
+        if not s.open_door: # feasibility check
+            if random.random()<OPEN_EGO:
+                
+                s.open_door = True
+        
+        next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]
+    
+    elif a_ego_name == "close_ego":
+        
+        if s.open_door: # feasibility check
+            if random.random()<CLOSE_EGO:
+                
+                s.open_door = False
+        
+        next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]
+                
+        
     else:
+        
         next_action = a_ego_name[:-3]+"action"+"-"+args_ego[0]
         
+      
         
     # add ego's next action for the other agent     
     s.next_actions.append(next_action)   
@@ -728,14 +759,7 @@ def joint_execute_fn(a, b, s, store):
         if args[0] != args_ego[0]:
             next_actions.remove(na)
             next_actions.append("nothing_action-"+args[0])
-    
-           
-    #  next actions
-    
-    b_temp = copy.deepcopy(b)
-    o = EnvObservation(holding=holding,open_door=open_door,rob_regions=rob_regions,obj_regions=obj_regions)
-    b_temp = b_temp.update(a,o,store)    
-    # s is updated by non-deterministic ego execution            
+             
     return s, EnvObservation(holding=s.holding,open_door=s.open_door,rob_regions=s.rob_regions,obj_regions=s.obj_regions,next_actions=next_actions)  
 def joint_effects_fn(a, b, store):
 
@@ -756,138 +780,81 @@ def joint_effects_fn(a, b, store):
     
     args_ego = a.args[n_args:]
     
-    
-    # special cases
-    # remember: next actions!!
-    # case 1: place, pick
-    if a_other_name == "place_other" and a_ego_name == "pick_ego": 
-        
+    # other agent
+    if a_other_name == "transit_other" or a_other_name == "transfer_other":
+        rob_regions = transit_transfer_other_effects_fn(a, b, store)
+    elif a_other_name == "pick_other":
+        obj_regions,holding = pick_other_effects_fn(a, b, store)
+    elif a_other_name == "place_other":
         obj_regions,holding = place_other_effects_fn(a, b, store)
-        
-        if obj_regions[a.args[1]] == a.args[2]: # other agent placed the object
-            if random.random()<0.9: # ego:non-deterministic # use simulator!!
-                holding[a.args[3]] = [a.args[1]]
-                obj_regions[a.args[1]] = ""
-        
-            
-    # case 2: open, pick
-    elif a_other_name == "open_other" and a_ego_name == "pick_ego":
-        
+    elif a_other_name == "open_other":
         open_door = open_other_effects_fn(a, b, store)
-        
-        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # in mug and door open or not in mug!
-            if a.args[2] == REGIONS[0]: # cabinet
-                pick_ego_sim = CABINET_PICK_EGO_SIM
-            else:
-                pick_ego_sim = SIMPLE_PICK_EGO_SIM
-            if random.random()<pick_ego_sim:
-                holding[a.args[1]] = [a.args[2]]
-                obj_regions[a.args[2]] = ""
-        
-            
-    # case 3: open, place
-    elif a_other_name == "open_other" and a_ego_name == "place_ego":
-        
-        open_door = open_other_effects_fn(a, b, store)
-        
-        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # in mug and door open or not in mug!
-            if random.random()<0.9:
-                holding[a.args[1]] = []
-                obj_regions[a.args[2]] = a.args[3]
-        
-            
-    # case 4: open, close
-    elif a_other_name == "open_other" and a_ego_name == "close_ego":
-        
-        if random.random()<CLOSE_EGO:
-            open_door = False
-        
-        
-    # case 5: close, pick
-    # case 6: close, place
-    elif a_other_name == "close_other" and (a_ego_name == "pick_ego" or a_ego_name == "place_ego"):
-        
+    elif a_other_name == "close_other":
         open_door = close_other_effects_fn(a, b, store)
+    else:
+        pass 
+    
+    # ego agent 
+    if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
+    
+        if random.random()<0.9:
+
+            rob_regions[args_ego[0]] = args_ego[2]
+    
+            
+    elif a_ego_name == "pick_ego":
         
-        if a_ego_name == "pick_ego":
+        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # feasibility check
             if a.args[2] == REGIONS[0]: # cabinet
                 pick_ego_sim = CABINET_PICK_EGO_SIM
             else:
                 pick_ego_sim = SIMPLE_PICK_EGO_SIM
-            if random.random()<pick_ego_sim:
-                holding[a.args[1]] = [a.args[2]]
-                obj_regions[a.args[2]] = ""
-        else:
-            if random.random()<0.9:
-                holding[a.args[1]] = []
-                obj_regions[a.args[2]] = a.args[3]
-        
-    # case 7: close, open
-    elif a_other_name == "close_other" and a_ego_name == "open_ego":
-        
-        if random.random()<OPEN_EGO:
-            open_door = True
-        
-    else: # rest
-        # other: non-deterministic
-        
-        if a_other_name == "transit_other" or a_other_name == "transfer_other":
-            
-            rob_regions = transit_transfer_other_effects_fn(a, b, store)
-            
-            
-        elif a_other_name == "open_other":
-            
-            open_door = open_other_effects_fn(a, b, store)
-            
-        elif a_other_name == "close_other":
-            
-            open_door = close_other_effects_fn(a, b, store)
-            
-        elif a_other_name == "pick_other":
-            
-            obj_regions,holding = pick_other_effects_fn(a, b, store)
-            
-            
-        elif a_other_name == "place_other":
-            
-            obj_regions,holding = place_other_effects_fn(a, b, store)
-            
-        # ego: non-deterministic
-        
-        if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
-            if random.random()<0.9:
-                rob_regions[args_ego[0]] = args_ego[2]
-        elif a_ego_name == "pick_ego":
-            if a.args[2] == REGIONS[0]: # cabinet
-                pick_ego_sim = CABINET_PICK_EGO_SIM
-            else:
-                pick_ego_sim = SIMPLE_PICK_EGO_SIM
-            if random.random()<pick_ego_sim:
+            if random.random()<pick_ego_sim: # 90% success
+                
                 holding[args_ego[0]] = [args_ego[1]]
                 obj_regions[args_ego[1]] = ""
-        elif a_ego_name == "place_ego":
-            if random.random()<0.9:
+                
+    
+    elif a_ego_name == "place_ego":
+        
+        if (a.args[3] == REGIONS[0] and open_door) or a.args[3] != REGIONS[0]: # feasibility check
+            
+            if random.random()<0.9: # 90% success
+                
                 holding[args_ego[0]] = []
                 obj_regions[args_ego[1]] = args_ego[2]
-        elif a_ego_name == "open_ego":
+                
+        
+    elif a_ego_name == "open_ego":
+        
+        if not open_door: # feasibility check
             if random.random()<OPEN_EGO:
+                
                 open_door = True
-        elif a_ego_name == "close_ego":
+        
+    
+    elif a_ego_name == "close_ego":
+        
+        if open_door: # feasibility check
             if random.random()<CLOSE_EGO:
+                
                 open_door = False
+                        
+        
+    else:
+        
+        pass
     
     # resulting state
     b_temp = copy.deepcopy(b)
-    obs = EnvObservation(holding=holding,open_door=open_door,rob_regions=rob_regions,obj_regions=obj_regions)
-    b_temp = b_temp.update(a,obs,store)   
-    next_actions = get_next_actions_effects(a, b_temp, store)
+    next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief
     
     o = EnvObservation(holding=holding,open_door=open_door,rob_regions=rob_regions,obj_regions=obj_regions,next_actions=next_actions)    
     new_belief=b.update(a,o,store)
-    return AbstractBeliefSet.from_beliefs([new_belief], store)        
-            
-
+    
+    return AbstractBeliefSet.from_beliefs([new_belief], store)     
+        
+    
 # rest of the ego-actions have deterministic effects! 
 
 # Set up environment dynamics
@@ -1279,8 +1246,8 @@ class ToyDiscrete(TampuraEnv):
 
         return spec
 
-# Planner
-
+# Planner    
+    
 def main():
     
      ############################  TAMPURA  ###################################
@@ -1311,201 +1278,368 @@ def main():
     # Set some print options to print out abstract belief, action, observation, and reward
     cfg["print_options"] = "ab,a,o,r"
     cfg["vis_graph"] = True
-    # batch size 100, num samples 500 num skeletons 100 works best!!
-    cfg["batch_size"] = 500 #100 
-    cfg["num_samples"] = 500 #500
-    # overcome optimism about itself!
-    cfg["batch_size"] = 100 #100 
-    cfg["num_samples"] = 1000 #500
+    
+    cfg['batch_size'] = 500
+    cfg['num_samples'] = 500
     
     cfg["max_steps"] = 15
     cfg["num_skeletons"] = 100
+    cfg['envelope_threshold'] = 0.05 # enforce reuse
+    
     cfg["flat_sample"] = False # TODO: check; may cause progressive widening
     cfg['save_dir'] = os.getcwd()+"/runs/run{}".format(time.time())
+    
+    
+    if EXEC != 3: # not nominal
 
-    # cfg['from_scratch'] = False # imp: re-use!!! but graph gets too big
-    cfg['envelope_threshold'] = 0.05 # enforce reuse
+        if TRAIN == 0: # human
+            cfg["batch_size"] = 10  
+            cfg["num_samples"] = 50
+        elif TRAIN == 1: # random
+            cfg['batch_size'] = 500
+            cfg['num_samples'] = 500
+        elif TRAIN == 2:
+            cfg["batch_size"] = 100  
+            cfg["num_samples"] = 2000 
+        
+        
 
-    # state
-    s = EnvState(holding={ROBOTS[0]:[],ROBOTS[1]:[]},open_door=False,
-                rob_regions={ROBOTS[0]:REGIONS[-1],ROBOTS[1]:REGIONS[-1]},
+        # state
+        s = EnvState(holding={ROBOTS[0]:[],ROBOTS[1]:[]},open_door=False,
+                rob_regions={ROBOTS[0]:REGIONS[-1],ROBOTS[1]:REGIONS[-1]}, # short horizon
                 obj_regions={MUG:REGIONS[0]},
                 next_actions=["nothing_action-"+ROBOTS[0],"nothing_action-"+ROBOTS[1]])
-    # for robot1
-    # Initialize 
-    env = ToyDiscrete(config=cfg)
-    b0, store= env.initialize(ego=ROBOTS[0],s=s)
+        # for robot1
+        # Initialize 
+        env = ToyDiscrete(config=cfg)
+        b0, store= env.initialize(ego=ROBOTS[0],s=s)
 
 
-    # Set up logger to print info
-    setup_logger(cfg["save_dir"], logging.INFO)
+        # Set up logger to print info
+        setup_logger(cfg["save_dir"], logging.INFO)
 
-    # Initialize the policy
-    planner = TampuraPolicy(config = cfg, problem_spec = env.problem_spec)
+        # Initialize the policy
+        planner = TampuraPolicy(config = cfg, problem_spec = env.problem_spec)
 
-    env.state = copy.deepcopy(s)
-
-
-
-    b=b0
-
-
-    assert env.problem_spec.verify(store)
-
-    save_config(planner.config, planner.config["save_dir"])
-
-    history = RolloutHistory(planner.config)
-
-    st = time.time()
-    for step in range(100):
-
-        # robot 1 acts
-        # s = copy.deepcopy(env.state)
         env.state = copy.deepcopy(s)
-        b.next_actions = s.next_actions # important!!
-        a_b = b.abstract(store)
-        reward = env.problem_spec.get_reward(a_b, store)
-        if reward:
-            print("goal achieved")
-            break
-        
-        logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
-        if "s" in planner.print_options:
-            logging.info("State: " + str(s))
-        if "b" in planner.print_options:
-            logging.info("Belief: " + str(b))
-        if "ab" in planner.print_options:
-            logging.info("Abstract Belief: " + str(a_b))
-        if "r" in planner.print_options:
-            logging.info("Reward: " + str(reward))
-        
-        
-        action, info, store = planner.get_action(b, store) # should only call effects functions!!??
-        
-        
-        if "a" in planner.print_options:
-            logging.info("Action: " + str(action))
 
-        if action.name == "no-op":
-            bp = copy.deepcopy(b)
-            observation = None
-        else:
-            observation= env.step(action, b, store) # should call execute function
-            bp = b.update(action, observation, store)
 
-            if planner.config["vis"]:
-                env.vis_updated_belief(bp, store)
 
-        a_bp = bp.abstract(store)
-        history.add(s, b, a_b, action, observation, reward, info, store, time.time() - st)
+        b=b0
 
-        reward = env.problem_spec.get_reward(a_bp, store)
-        
-        if "o" in planner.print_options:
-            logging.info("Observation: " + str(observation))
-        if "sp" in planner.print_options:
-            logging.info("Next State: " + str(env.state))
-        if "bp" in planner.print_options:
-            logging.info("Next Belief: " + str(bp))
-        if "abp" in planner.print_options:
-            logging.info("Next Abstract Belief: " + str(a_bp))
-        if "rp" in planner.print_options:
-            logging.info("Next Reward: " + str(reward))
 
-        # update the belief
-        b = bp
-        
-        s = copy.deepcopy(env.state)
-        # human operator:
-        
-        # apparent action
-        
-        # remove previous action
-        for ac in s.next_actions:
-            name,args = ac.split("-")
-            args=args.split("%")
-            if args[0] == ROBOTS[1]:
-                s.next_actions.remove(ac)
-                
-        
-        # get current action
-        next_actions = get_next_actions_execute(action,b,store)
-        for ac in next_actions:
-            name,args = ac.split("-")
-            args=args.split("%")
-            if args[0] == ROBOTS[1]:
-                s.next_actions.append(ac)
-                if name == "transit_action" or name == "transfer_action":
-                    while True:
-                        print(ac)
-                        print("True region of movement?")
-                        for i,reg in enumerate(REGIONS):
-                            print(str(i)+". "+reg)
-                        choice = input("Pick region")
-                        if int(choice)>=0 and int(choice)<len(REGIONS):
-                            break
-                    s.rob_regions[args[0]] = REGIONS[int(choice)]
-                    print(s.rob_regions[args[0]])
-                elif name == "open_action":
-                    while True:
-                        print(ac)
-                        print("Was the door opened?")
-                        choice = input("0:No / 1:Yes")
-                        if int(choice)==0 or int(choice)==1:
-                            break
-                    if int(choice)==1:
-                        s.open_door = True
-                        print("opened")
-                elif name == "close_action":
-                    while True:
-                        print(ac)
-                        print("Was the door closed?")
-                        choice = input("0:No / 1:Yes")
-                        if int(choice)==0 or int(choice)==1:
-                            break
-                    if int(choice)==1:
-                        s.open_door = False
-                        print("closed")
-                elif name == "pick_action":
-                    while True:
-                        print(ac)
-                        print("Was pick executed?")
-                        choice = input("0:No / 1:Yes")
-                        if int(choice)==0 or int(choice)==1:
-                            break
-                    if int(choice) == 1: 
-                        s.holding[args[0]] = [args[1]]
-                        s.obj_regions[args[1]] = ""
-                    print(s.holding[args[0]])
-                    print(s.obj_regions)
-                elif name == "place_action":
-                    while True:
-                        print(ac)
-                        print("Was place executed?")
-                        choice = input("0:No / 1:Yes")
-                        if int(choice)==0 or int(choice)==1:
-                            break
-                    if int(choice) == 1: 
-                        s.holding[args[0]] = []
-                        s.obj_regions[args[1]] = s.rob_regions[args[0]]
-                    print(s.holding[args[0]])
-                    print(s.obj_regions)
-                        
-                        
+        assert env.problem_spec.verify(store)
+
+        save_config(planner.config, planner.config["save_dir"])
+
+        history = RolloutHistory(planner.config)
+
+        st = time.time()
+        for step in range(100):
+            
+            # robot 1 acts
+            env.state = copy.deepcopy(s)
+            b.next_actions = s.next_actions # important!!
+            a_b = b.abstract(store)
+            reward = env.problem_spec.get_reward(a_b, store)
+            
+            if reward:
+                print("goal achieved")
                 break
-    
-        # true outcome
-        
-    history.add(env.state, bp, a_bp, None, None, reward, info, store, time.time() - st)
-        
-    logging.info("=" * 20)
+            
+            logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+            if "s" in planner.print_options:
+                logging.info("State: " + str(s))
+            if "b" in planner.print_options:
+                logging.info("Belief: " + str(b))
+            if "ab" in planner.print_options:
+                logging.info("Abstract Belief: " + str(a_b))
+            if "r" in planner.print_options:
+                logging.info("Reward: " + str(reward))
+            
+            
+            action, info, store = planner.get_action(b, store) 
+            
 
-    env.wrapup()
+            if action.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
+                bp = copy.deepcopy(b)
+                observation = None
+                
+                # replace previous action with nothing 
+                for ac in s.next_actions:
+                    name,args = ac.split("-")
+                    args=args.split("%")
+                    if args[0] == ROBOTS[1]:
+                        s.next_actions.remove(ac)
+                        s.next_actions.append("nothing_action-"+args[0])
+                
+                continue # skip the rest of the loop (asking for next action) and repeat MDP solving step
+                
+            else:
+                
+                if "a" in planner.print_options:
+                    logging.info("Action: " + str(action))
+                observation= env.step(action, b, store) # should call execute function
+                bp = b.update(action, observation, store)
 
-    if not planner.config["real_execute"]:
-        save_run_data(history, planner.config["save_dir"])
+                if planner.config["vis"]:
+                    env.vis_updated_belief(bp, store)
+
+            a_bp = bp.abstract(store)
+            history.add(s, b, a_b, action, observation, reward, info, store, time.time() - st)
+
+            reward = env.problem_spec.get_reward(a_bp, store)
+            
+            
+            if "o" in planner.print_options:
+                logging.info("Observation: " + str(observation))
+            if "sp" in planner.print_options:
+                logging.info("Next State: " + str(env.state))
+            if "bp" in planner.print_options:
+                logging.info("Next Belief: " + str(bp))
+            if "abp" in planner.print_options:
+                logging.info("Next Abstract Belief: " + str(a_bp))
+            if "rp" in planner.print_options:
+                logging.info("Next Reward: " + str(reward))
+
+            # update the belief
+            b = bp
+            # update the state as modified by ego!
+            s = copy.deepcopy(env.state)
+
+            # remove previous action (nothing)
+            for ac in s.next_actions:
+                name,args = ac.split("-")
+                args=args.split("%")
+                if args[0] == ROBOTS[1]:
+                    s.next_actions.remove(ac)
+                    
+            
+            # get current action
+                        
+            next_actions = get_next_actions_execute(action,b,store)
+            for ac in next_actions:
+                s.next_actions.append(ac)
                 
+        
+            # true outcome evaluated in functions
+            
+        # history.add(env.state, bp, a_bp, None, None, reward, info, store, time.time() - st)
+            
+        logging.info("=" * 20)
+
+        env.wrapup()
+
+        if not planner.config["real_execute"]:
+            save_run_data(history, planner.config["save_dir"])
+                    
+    else: # nominal
+        
+        # train random
+        
+        # state
+        s = EnvState(holding={ROBOTS[0]:[],ROBOTS[1]:[]},open_door=False,
+                rob_regions={ROBOTS[0]:REGIONS[-1],ROBOTS[1]:REGIONS[-1]}, # short horizon
+                obj_regions={MUG:REGIONS[0]},
+                next_actions=["nothing_action-"+ROBOTS[0],"nothing_action-"+ROBOTS[1]])
+
+        save_dir = os.getcwd()+"/runs/run{}".format(time.time())
+        # for robot1
+        # Initialize 
+        save_dir_1 = save_dir + "/planner1"
+        cfg1 = cfg.copy()
+        cfg1['save_dir'] = save_dir_1
+        env1 = ToyDiscrete(config=cfg1)
+        b01, store1= env1.initialize(ego=ROBOTS[0],s=s)
+        # for robot2
+        # Initialize 
+        save_dir_2 = save_dir + "/planner2"
+        cfg2 = cfg.copy()
+        cfg2['save_dir'] = save_dir_2
+        env2 = ToyDiscrete(config=cfg2)
+        b02, store2= env2.initialize(ego=ROBOTS[1],s=s)
+
+        # Set up logger to print info
+        setup_logger(cfg1["save_dir"], logging.INFO)
+        setup_logger(cfg2["save_dir"], logging.INFO)
+
+        # Initialize the policy
+
+        planner1 = TampuraPolicy(config = cfg1, problem_spec = env1.problem_spec)
+        planner2 = TampuraPolicy(config = cfg2, problem_spec = env2.problem_spec)
+
+        env1.state = copy.deepcopy(s)
+        env2.state = copy.deepcopy(s)
+        
+        b1=b01
+        b2=b02
+
+        assert env1.problem_spec.verify(store1)
+        assert env2.problem_spec.verify(store2)
+
+        save_config(planner1.config, planner1.config["save_dir"])
+        save_config(planner2.config, planner2.config["save_dir"])
+
+        history1 = RolloutHistory(planner1.config)
+        history2 = RolloutHistory(planner2.config)
+
+        st = time.time()
+        for step in range(100):
+
+            # robot 1 acts
+            env1.state = copy.deepcopy(env2.state) # important!!
+            s1 = copy.deepcopy(env1.state)
+            b1.next_actions = s1.next_actions # important!!
+            a_b1 = b1.abstract(store1)
+            reward1 = env1.problem_spec.get_reward(a_b1, store1)
+            
+            if reward1:
+                print("goal achieved")
+                break  
+            
+            logging.info("\n robot 1 ")
+            logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+            if "s" in planner1.print_options:
+                logging.info("State: " + str(s1))
+            if "b" in planner1.print_options:
+                logging.info("Belief: " + str(b1))
+            if "ab" in planner1.print_options:
+                logging.info("Abstract Belief: " + str(a_b1))
+            if "r" in planner1.print_options:
+                logging.info("Reward: " + str(reward1))
+            
+            
+            action1, info1, store1 = planner1.get_action(b1, store1) # should only call effects functions!!??
+            
+            
+            
+            if action1.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
+                bp1 = copy.deepcopy(b1)
+                observation1 = None
                 
+                # replace previous action with nothing 
+                for ac in s.next_actions:
+                    name,args = ac.split("-")
+                    args=args.split("%")
+                    if args[0] != ROBOTS[0]: # other agent
+                        s.next_actions.remove(ac)
+                        s.next_actions.append("nothing_action-"+args[0])
+                
+                continue 
+            else:
+                if "a" in planner1.print_options:
+                    logging.info("Action: " + str(action1))
+
+                observation1= env1.step(action1, b1, store1) # should call execute function
+                bp1 = b1.update(action1, observation1, store1)
+
+                if planner1.config["vis"]:
+                    env1.vis_updated_belief(bp1, store1)
+
+            a_bp1 = bp1.abstract(store1)
+            history1.add(s1, b1, a_b1, action1, observation1, reward1, info1, store1, time.time() - st)
+
+            reward1 = env1.problem_spec.get_reward(a_bp1, store1)
+            
+            if "o" in planner1.print_options:
+                logging.info("Observation: " + str(observation1))
+            if "sp" in planner1.print_options:
+                logging.info("Next State: " + str(env1.state))
+            if "bp" in planner1.print_options:
+                logging.info("Next Belief: " + str(bp1))
+            if "abp" in planner1.print_options:
+                logging.info("Next Abstract Belief: " + str(a_bp1))
+            if "rp" in planner1.print_options:
+                logging.info("Next Reward: " + str(reward1))
+
+            # update the belief
+            b1 = bp1
+            
+            # robot 2 acts
+            env2.state = copy.deepcopy(env1.state) # important!!
+            s2 = copy.deepcopy(env2.state)
+            b2.next_actions = s2.next_actions # important!!
+            a_b2 = b2.abstract(store2)
+            reward2 = env2.problem_spec.get_reward(a_b2, store2)
+            
+            if reward2:
+                print("goal achieved")
+                break  
+
+            logging.info("\n robot 2 ")
+            logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+            if "s" in planner2.print_options:
+                logging.info("State: " + str(s2))
+            if "b" in planner1.print_options:
+                logging.info("Belief: " + str(b2))
+            if "ab" in planner1.print_options:
+                logging.info("Abstract Belief: " + str(a_b2))
+            if "r" in planner1.print_options:
+                logging.info("Reward: " + str(reward2))
+            
+            
+            
+            action2, info2, store2 = planner2.get_action(b2, store2) # should only call effects functions!!??
+            
+            
+            
+
+            if action2.name == "no-op": # symk planning failure returns no-op; else we would get "nothing_ego"
+                bp2 = copy.deepcopy(b2)
+                observation2 = None
+                
+                # replace previous action with nothing 
+                for ac in s.next_actions:
+                    name,args = ac.split("-")
+                    args=args.split("%")
+                    if args[0] != ROBOTS[1]:
+                        s.next_actions.remove(ac)
+                        s.next_actions.append("nothing_action-"+args[0])
+                
+                continue 
+            else:
+                if "a" in planner2.print_options:
+                    logging.info("Action: " + str(action2))
+                observation2= env2.step(action2, b2, store2) # should call execute function
+                bp2 = b2.update(action2, observation2, store2)
+
+                if planner2.config["vis"]:
+                    env2.vis_updated_belief(bp2, store2)
+
+            a_bp2 = bp2.abstract(store2)
+            history2.add(s2, b2, a_b2, action2, observation2, reward2, info2, store2, time.time() - st)
+
+            reward2 = env2.problem_spec.get_reward(a_bp2, store2)
+            
+            if "o" in planner2.print_options:
+                logging.info("Observation: " + str(observation2))
+            if "sp" in planner2.print_options:
+                logging.info("Next State: " + str(env2.state))
+            if "bp" in planner2.print_options:
+                logging.info("Next Belief: " + str(bp2))
+            if "abp" in planner2.print_options:
+                logging.info("Next Abstract Belief: " + str(a_bp2))
+            if "rp" in planner2.print_options:
+                logging.info("Next Reward: " + str(reward2))
+
+            # update the belief
+            b2 = bp2
+
+        history1.add(env1.state, bp1, a_bp1, None, None, reward1, info1, store1, time.time() - st)
+        history2.add(env2.state, bp2, a_bp2, None, None, reward2, info2, store2, time.time() - st)
+            
+        logging.info("=" * 20)
+
+        env1.wrapup()
+        env2.wrapup()
+
+        if not planner1.config["real_execute"]:
+            save_run_data(history1, planner1.config["save_dir"])
+
+        if not planner2.config["real_execute"]:
+            save_run_data(history2, planner2.config["save_dir"])
+        
+      
                 
 
 

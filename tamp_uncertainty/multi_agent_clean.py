@@ -101,14 +101,14 @@ class EnvBelief(Belief):
         else: # robot, object, region
             nargs_other = 3
             
-        
+        a_ego_args = a.args[nargs_other:]
        
         
         
         if a_other_name == "pick_other" or a_other_name == "place_other":
     
-            holding = o.holding
-            obj_regions = o.obj_regions
+            holding[a.args[0]] = o.holding[a.args[0]]
+            obj_regions[a.args[1]] = o.obj_regions[a.args[1]]
         
         elif a_other_name == "clean_other":
             
@@ -116,15 +116,13 @@ class EnvBelief(Belief):
         
         if a_ego_name == "pick_ego" or a_ego_name == "place_ego":
             
-            holding = o.holding
-            obj_regions = o.obj_regions
+            holding[a_ego_args[0]] = o.holding[a_ego_args[0]]
+            obj_regions[a_ego_args[1]] = o.obj_regions[a_ego_args[1]]
         
         elif a_ego_name == "clean_ego":
             
             clean = o.clean
-            
-            
-           
+              
         next_actions = o.next_actions
             
         return EnvBelief(holding=holding,clean=clean,obj_regions=obj_regions,next_actions=next_actions)
@@ -252,7 +250,7 @@ def get_next_actions_effects(a, b, store): # human operator : tedious, kind of w
     else: # robot, object, region
         n_args = 3
     
-    if EXEC == 0: # human  
+    if TRAIN == 0: # human  
         print("ego attempts action ..")
         print(a_ego_name)
         print(a.args[n_args:])
@@ -569,14 +567,7 @@ def joint_execute_fn(a, b, s, store):
         if args[0] != args_ego[0]:
             next_actions.remove(na)
             next_actions.append("nothing_action-"+args[0])
-    
-           
-    #  next actions
-    
-    b_temp = copy.deepcopy(b)
-    o = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions)
-    b_temp = b_temp.update(a,o,store)    
-    # s is updated by non-deterministic ego execution            
+                
     return s, EnvObservation(holding=s.holding,clean=s.clean,obj_regions=s.obj_regions,next_actions=next_actions)  
 def joint_effects_fn(a, b, store):
 
@@ -627,9 +618,7 @@ def joint_effects_fn(a, b, store):
     # resulting state
     b_temp = copy.deepcopy(b)
     next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief
-    # obs = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions) 
-    # b_temp = b_temp.update(a,obs,store)   
-
+    
     o = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions,next_actions=next_actions)    
     new_belief=b.update(a,o,store)
     return AbstractBeliefSet.from_beliefs([new_belief], store)        
