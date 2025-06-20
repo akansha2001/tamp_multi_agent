@@ -33,9 +33,9 @@ from tampura.config.config import load_config, setup_logger
 
 # TODO: different training and execution scenarios, study the MDPs
 # 0: human, 1: random, 2: inactive
-TRAIN = 0
+TRAIN = 2
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 0
+EXEC = 2
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
@@ -896,12 +896,16 @@ def main():
     # Set some print options to print out abstract belief, action, observation, and reward
     cfg["print_options"] = "ab,a,o,r"
     cfg["vis_graph"] = True
-    # batch size 100, num samples 500 num skeletons 100 works best!!
-    cfg["batch_size"] = 10 #100 
-    cfg["num_samples"] = 10 #500
-    # overcome optimism for inactive agent
-    # cfg["batch_size"] = 100 #100 
-    # cfg["num_samples"] = 5000 #500
+
+    if TRAIN == 0: # human
+        cfg["batch_size"] = 10  
+        cfg["num_samples"] = 50
+    elif TRAIN == 1: # random
+        cfg['batch_size'] = 500
+        cfg['num_samples'] = 500
+    elif TRAIN == 2:
+        cfg["batch_size"] = 100  
+        cfg["num_samples"] = 2000 
     
     cfg["max_steps"] = 15
     cfg["num_skeletons"] = 100
