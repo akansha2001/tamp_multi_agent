@@ -36,9 +36,9 @@ from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 # TODO: different training and execution scenarios, study the MDPs
 # TODO: change action templates for open open, etc.
 # 0: human, 1: random, 2: inactive
-TRAIN = 1
+TRAIN = 2
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 0
+EXEC = 2
 
 ROB = "robot_"
 REG = "region_"
@@ -925,21 +925,7 @@ class ToyDiscrete(TampuraEnv):
                             [Atom("pick_action",[rob,obj]) for obj in OBJ_REGIONS.keys()] + [Atom("place_action",[rob,obj])for obj in OBJ_REGIONS.keys()] +
                             [Atom("open_action",[rob]),Atom("close_action",[rob]),Atom("nothing_action",[rob])] for rob in others]
         
-        possible_outcomes_pick_place = [[Atom("transit_action",[rob,reg]) for reg in REGIONS]+[Atom("transfer_action",[rob,obj,reg]) for obj in OBJ_REGIONS.keys() for reg in REGIONS] +
-                                        [Atom("pick_action",[rob,obj]) for obj in OBJ_REGIONS.keys()] + [Atom("place_action",[rob,obj])for obj in OBJ_REGIONS.keys()] +
-                                        [Atom("nothing_action",[rob])] for rob in others]
-        
-        possible_outcomes_open_close = [[Atom("transit_action",[rob,reg]) for reg in REGIONS]+
-                                        [Atom("open_action",[rob]),Atom("close_action",[rob]),Atom("nothing_action",[rob])] for rob in others]
-        
-        possible_outcomes_transit = [[Atom("transit_action",[rob,reg]) for reg in REGIONS]+
-                                     [Atom("pick_action",[rob,obj]) for obj in OBJ_REGIONS.keys()] +
-                                     [Atom("open_action",[rob]),Atom("close_action",[rob]),Atom("nothing_action",[rob])] for rob in others]
-        
-        possible_outcomes_transfer = [[Atom("transfer_action",[rob,obj,reg]) for obj in OBJ_REGIONS.keys() for reg in REGIONS] +
-                                      [Atom("place_action",[rob,obj])for obj in OBJ_REGIONS.keys()] +
-                                      [Atom("nothing_action",[rob])] for rob in others]
-        
+       
         
         # modify preconditions, effects and execute functions for observation
         action_schemas_ego = [
@@ -1042,7 +1028,7 @@ class ToyDiscrete(TampuraEnv):
                                Atom("in_rob",["?rob2","?reg3"]), # robot is in region from where pick is attempted
                                Not(Exists(Atom("holding",["?rob2","?obj"]),["?obj"],["physical"])), # robot hand is free
                                ],
-                verify_effects=[OneOf([Atom("holding",["?rob2","?obj2"]),Atom("in_obj",["?obj2","?reg3"])])]+[OneOf(po) for po in possible_outcomes_pick_place],
+                verify_effects=[OneOf([Atom("holding",["?rob2","?obj2"]),Atom("in_obj",["?obj2","?reg3"])])]+[OneOf(po) for po in possible_outcomes],
             ),
             
             
@@ -1059,7 +1045,7 @@ class ToyDiscrete(TampuraEnv):
                                Not(Atom("in_obj",["?obj2","?reg3"])),
                                Atom("stable",["?obj2","?reg3"]), # region where place is attempted is stable
                                ],
-                verify_effects=[OneOf([Atom("holding",["?rob2","?obj2"]),Atom("in_obj",["?obj2","?reg3"])])]+[OneOf(po) for po in possible_outcomes_pick_place],
+                verify_effects=[OneOf([Atom("holding",["?rob2","?obj2"]),Atom("in_obj",["?obj2","?reg3"])])]+[OneOf(po) for po in possible_outcomes],
             ),
             
             ActionSchema(
@@ -1072,7 +1058,7 @@ class ToyDiscrete(TampuraEnv):
                                Not(Atom("in_rob",["?rob2","?reg4"])),
                                Not(Exists(Atom("holding",["?rob2","?obj"]),["?obj"],["physical"])), # robot hand is free
                                ],
-                verify_effects=[OneOf([Atom("in_rob",["?rob2",reg]) for reg in REGIONS])]+[OneOf(po) for po in possible_outcomes_transit],
+                verify_effects=[OneOf([Atom("in_rob",["?rob2",reg]) for reg in REGIONS])]+[OneOf(po) for po in possible_outcomes],
             ),
             
             ActionSchema(
@@ -1085,7 +1071,7 @@ class ToyDiscrete(TampuraEnv):
                                Not(Atom("in_rob",["?rob2","?reg4"])),
                                Atom("holding",["?rob2","?obj2"]),
                                ],
-                verify_effects=[OneOf([Atom("in_rob",["?rob2",reg]) for reg in REGIONS])]+[OneOf(po) for po in possible_outcomes_transfer],
+                verify_effects=[OneOf([Atom("in_rob",["?rob2",reg]) for reg in REGIONS])]+[OneOf(po) for po in possible_outcomes],
             ),
             ActionSchema(
                 name="open_other",
@@ -1096,7 +1082,7 @@ class ToyDiscrete(TampuraEnv):
                                Not(Atom("open",[DOOR])),
                                Atom("in_rob",["?rob2",REGIONS[1]]),
                                Not(Exists(Atom("holding",["?rob2","?obj"]),["?obj"],["physical"]))],
-                verify_effects=[Atom("open",[DOOR])]+[OneOf(po) for po in possible_outcomes_open_close], # TODO: modify     
+                verify_effects=[Atom("open",[DOOR])]+[OneOf(po) for po in possible_outcomes], # TODO: modify     
             ),
             ActionSchema(
                 name="close_other",
@@ -1107,7 +1093,7 @@ class ToyDiscrete(TampuraEnv):
                                Atom("open",[DOOR]),
                                Atom("in_rob",["?rob2",REGIONS[1]]),
                                Not(Exists(Atom("holding",["?rob2","?obj"]),["?obj"],["physical"]))],
-                verify_effects=[Not(Atom("open",[DOOR]))]+[OneOf(po) for po in possible_outcomes_open_close], # TODO: modify
+                verify_effects=[Not(Atom("open",[DOOR]))]+[OneOf(po) for po in possible_outcomes], # TODO: modify
             ),
             ActionSchema(
                 name="nothing_other",
@@ -1159,7 +1145,7 @@ class ToyDiscrete(TampuraEnv):
                                             Atom("in_rob",["?rob2","?reg1"]),Atom("stable",["?obj1","?reg1"]),
                                             Or([Not(Atom("in_rob",["?rob2",REGIONS[0]])),And([Atom("in_rob",["?rob2",REGIONS[0]]),Atom("open",[DOOR])])]), # accessibility of region for place
                                             ] # special Pre
-                    schema.verify_effects = [OneOf([Atom("holding",["?rob1","?obj1"]),Atom("holding",["?rob2","?obj1"]),Atom("in_obj",["?obj1","?reg1"])])] + [OneOf(po) for po in possible_outcomes_pick_place] # special UEff
+                    schema.verify_effects = [OneOf([Atom("holding",["?rob1","?obj1"]),Atom("holding",["?rob2","?obj1"]),Atom("in_obj",["?obj1","?reg1"])])] + [OneOf(po) for po in possible_outcomes] # special UEff
                     
                 # case 2: open, pick
                 elif as_other_name == "open_other" and as_ego_name == "pick_ego":
@@ -1189,7 +1175,7 @@ class ToyDiscrete(TampuraEnv):
                     schema.inputs = as_other.inputs + as_ego.inputs
                     schema.input_types = as_other.input_types + as_ego.input_types
                     schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]),Atom("in_rob",["?rob1",REGIONS[1]]), Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"]))] # Pre for open + special Pre
-                    schema.verify_effects = [OneOf(po) for po in possible_outcomes_open_close] + as_ego.verify_effects # UEff not cartesian pdt
+                    schema.verify_effects = [OneOf(po) for po in possible_outcomes] + as_ego.verify_effects # UEff not cartesian pdt
                     
                 # case 5: close, pick
                 elif as_other_name == "close_other" and as_ego_name == "pick_ego":
@@ -1218,7 +1204,7 @@ class ToyDiscrete(TampuraEnv):
                     schema.inputs = as_other.inputs + as_ego.inputs
                     schema.input_types = as_other.input_types + as_ego.input_types
                     schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]),Atom("in_rob",["?rob1",REGIONS[1]]), Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"]))] # Pre for open + special Pre
-                    schema.verify_effects = [OneOf(po) for po in possible_outcomes_open_close] + as_ego.verify_effects
+                    schema.verify_effects = [OneOf(po) for po in possible_outcomes] + as_ego.verify_effects
                 
                 # regular cases
                 else: 
@@ -1300,7 +1286,7 @@ def main():
             cfg['num_samples'] = 1000
         elif TRAIN == 2:
             cfg["batch_size"] = 100  
-            cfg["num_samples"] = 2000 
+            cfg["num_samples"] = 5000 
         
         
 
