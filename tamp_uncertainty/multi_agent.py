@@ -397,7 +397,7 @@ def transit_transfer_other_effects_fn(a, b, store):
             choice = input("Pick region")
             if int(choice)>=0 and int(choice)<len(REGIONS):
                 break
-        reg = REGIONS[choice]
+        reg = REGIONS[int(choice)]
         print(reg)
         
     elif TRAIN == 1: # random
