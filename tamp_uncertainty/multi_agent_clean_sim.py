@@ -27,6 +27,10 @@ parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+# add arguments to record videos
+parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
+parser.add_argument("--video_length", type=int, default=1000, help="Length of the recorded video (in steps).")
+parser.add_argument("--video_interval", type=int, default=5000, help="Interval between video recordings (in steps).")
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -92,7 +96,7 @@ class PickPlaceCleanSmWaitTime:
     APPROACH_LOC_1 = wp.constant(0.4)
     APPROACH_LOC_2 = wp.constant(0.4)
     
-    TIMEOUT = wp.constant(5.0)
+    TIMEOUT = wp.constant(10.0)
 
 
 @wp.func
@@ -1739,6 +1743,8 @@ def main():
     cfg["flat_sample"] = False # TODO: check; may cause progressive widening
     cfg['save_dir'] = os.getcwd()+"/runs/run{}".format(time.time())
     
+    log_dir = "/home/am/Videos/"  
+    
     # parse configuration
     sim_env_cfg: FrankaMultiCleanEnvCfgik = parse_env_cfg(
         "Isaac-Lift-Cube-Franka-IK-Abs-multi-clean",
@@ -1747,7 +1753,18 @@ def main():
         use_fabric=not args_cli.disable_fabric,
     )
     # create environment
-    sim_env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-multi-clean", cfg=sim_env_cfg)
+    sim_env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-multi-clean", cfg=sim_env_cfg,render_mode="rgb_array" if args_cli.video else None)
+    # wrap for video recording
+    if args_cli.video:
+        video_kwargs = {
+            "video_folder": os.path.join(log_dir, "IsaacLab"),
+            "step_trigger": lambda step: step % args_cli.video_interval == 0,
+            "video_length": args_cli.video_length,
+            "disable_logger": False,
+        }
+        print("[INFO] Recording videos during training.")
+        sim_env = gym.wrappers.RecordVideo(sim_env, **video_kwargs)
+    # reset environment at start
     # reset environment at start
     sim_env.reset()
     
@@ -1906,8 +1923,8 @@ def main():
 
         env.wrapup()
 
-        if not planner.config["real_execute"]:
-            save_run_data(history, planner.config["save_dir"])
+        # if not planner.config["real_execute"]:
+        #     save_run_data(history, planner.config["save_dir"])
                     
     else: # nominal
         
@@ -2110,13 +2127,13 @@ def main():
         env1.wrapup()
         env2.wrapup()
 
-        if not planner1.config["real_execute"]:
-            save_run_data(history1, planner1.config["save_dir"])
+        # if not planner1.config["real_execute"]:
+        #     save_run_data(history1, planner1.config["save_dir"])
 
-        if not planner2.config["real_execute"]:
-            save_run_data(history2, planner2.config["save_dir"])
+        # if not planner2.config["real_execute"]:
+        #     save_run_data(history2, planner2.config["save_dir"])
         
-    
+    s.sim_env.close()
     
 
     
