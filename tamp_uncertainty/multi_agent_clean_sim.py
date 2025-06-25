@@ -443,7 +443,7 @@ from tampura.config.config import load_config, setup_logger
 # 0: human, 1: random, 2: inactive
 TRAIN = 1
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 0
+EXEC = 3
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
@@ -863,7 +863,7 @@ def place_execute(s, args):
     robot_2_offset = s.robot_2_offset
     ppc_sm = s.ppc_sm
     
-    if args[1] == REGIONS[0]:
+    if args[2] == REGIONS[0]:
         goal = torch.tensor([GOAL_POS]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
     else:
         goal = torch.tensor([TEMP_POS]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
@@ -1001,7 +1001,7 @@ def clean_execute(s, args):
         goal = torch.tensor([GOAL_POS]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
     else:
         goal = torch.tensor([TEMP_POS]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
-    
+    print(goal)
     if args[0] == ROBOTS[0]:
         goal = goal - robot_1_offset
     else:
@@ -1354,6 +1354,7 @@ def joint_execute_fn(a, b, s, store):
         nargs = 3
     
     args_ego = a.args[nargs:]
+    
     
     # remove ego's previous action
     for na in s.next_actions: 
