@@ -5,7 +5,7 @@
 import gymnasium as gym
 import os
 
-from . import class_uncertainty_ik_abs_env_cfg, search_object_ik_abs_env_cfg, simple_pick_env_cfg, cabinet_pick_env_cfg
+from . import class_uncertainty_ik_abs_env_cfg, search_object_ik_abs_env_cfg, simple_pick_env_cfg, cabinet_pick_env_cfg, multi_clean_env_cfg
 
 
 
@@ -55,3 +55,16 @@ gym.register(
     },
     disable_env_checker=True,
 )
+
+# multi agent clean
+
+
+gym.register(
+    id="Isaac-Lift-Cube-Franka-IK-Abs-multi-clean",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": multi_clean_env_cfg.FrankaMultiCleanEnvCfgik,
+    },
+    disable_env_checker=True,
+)
+
