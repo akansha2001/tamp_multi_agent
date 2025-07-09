@@ -330,7 +330,7 @@ class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
             prim_path="{ENV_REGEX_NS}/Debris",
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",
                 scale=(1.5, 1.5, 0.2),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
