@@ -457,9 +457,9 @@ from tampura.config.config import load_config, setup_logger
 
 # TODO: different training and execution scenarios, study the MDPs
 # 0: human, 1: random, 2: inactive
-TRAIN = 2
+TRAIN = 1
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 2
+EXEC = 1
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
@@ -478,7 +478,7 @@ OBJ_REGIONS={MUG:REGIONS[0]}
 # Test 
 # GOAL = Atom("holding",[ROBOTS[0],MUG])
 GOAL = And([Atom("clean",[REGIONS[0]]),Atom("in_obj",[MUG,REGIONS[0]])])
-
+# GOAL = Atom("holding",[ROBOTS[0],MUG]) # test to see if place other pick ego works
 
 # State of the environment
 @dataclass
@@ -1146,7 +1146,403 @@ def clean_execute(s, args):
     s.ppc_sm = ppc_sm
     return s
     
+def pretend_pick_execute(s, args):
     
+    # simulation
+    sim_env = s.sim_env 
+    sim_env_cfg = s.sim_env_cfg
+    robot_1_offset = s.robot_1_offset
+    robot_2_offset = s.robot_2_offset
+    ppc_sm = s.ppc_sm
+        
+    
+    # robot_1
+    # -- end-effector frame
+    ee_frame_sensor_1 = sim_env.unwrapped.scene["ee_frame_1"]
+    tcp_rest_position_1 = ee_frame_sensor_1.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_1_offset
+    tcp_rest_orientation_1 = ee_frame_sensor_1.data.target_quat_w[..., 0, :].clone()
+    
+    # robot_2
+    # -- end-effector frame
+    ee_frame_sensor_2 = sim_env.unwrapped.scene["ee_frame_2"]
+    tcp_rest_position_2 = ee_frame_sensor_2.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_2_offset
+    tcp_rest_orientation_2 = ee_frame_sensor_2.data.target_quat_w[..., 0, :].clone()
+    
+    
+    # create action buffers (position + quaternion)
+    actions = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+    
+    actions[:,0:7] = torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1)
+    actions[:,7] = GripperState.OPEN
+    
+    actions[:,8:15] = torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1)
+    actions[:,15] = GripperState.OPEN
+    
+    
+    
+    # desired object orientation (we only do position control of object)
+    desired_orientation = torch.zeros((sim_env.unwrapped.num_envs, 4), device=sim_env.unwrapped.device)
+    desired_orientation[:, 1] = 1.0
+    # create state machine
+    ppc_sm = PickPlaceCleanSm(
+        sim_env_cfg.sim.dt * sim_env_cfg.decimation, sim_env.unwrapped.num_envs, sim_env.unwrapped.device, position_threshold=0.01
+    )
+    
+    
+    
+    while simulation_app.is_running():
+        # run everything in inference mode
+        with torch.inference_mode():
+            # step environment
+            dones = sim_env.step(actions)[-2]
+
+            # observations
+    
+            # robot_1
+            # -- end-effector frame
+            ee_frame_sensor_1 = sim_env.unwrapped.scene["ee_frame_1"]
+            tcp_rest_position_1 = ee_frame_sensor_1.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_1_offset
+            tcp_rest_orientation_1 = ee_frame_sensor_1.data.target_quat_w[..., 0, :].clone()
+            
+            # robot_2
+            # -- end-effector frame
+            ee_frame_sensor_2 = sim_env.unwrapped.scene["ee_frame_2"]
+            tcp_rest_position_2 = ee_frame_sensor_2.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins  - robot_2_offset
+            tcp_rest_orientation_2 = ee_frame_sensor_2.data.target_quat_w[..., 0, :].clone()
+            
+            
+            # -- object frame
+            object_data: RigidObjectData = sim_env.unwrapped.scene["object"].data
+            object_position_1 = object_data.root_pos_w - sim_env.unwrapped.scene.env_origins - robot_1_offset
+            object_position_2 = object_data.root_pos_w - sim_env.unwrapped.scene.env_origins - robot_2_offset
+
+            
+            # -- target object frame
+            desired_position_1 = torch.tensor([[0.2,0.0,0.35]]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device)
+            desired_position_2 = torch.tensor([[0.2,0.0,0.35]]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device)
+            
+
+            if args[0] == ROBOTS[0]: # other agent is robot_1  
+
+                actions = ppc_sm.compute_pick(
+                    torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1),
+                    torch.cat([object_position_1, desired_orientation], dim=-1),
+                    torch.cat([desired_position_1, desired_orientation], dim=-1),
+                )
+            
+                actions_buffer = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+                
+                actions_buffer[:,8:15] = torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1)
+                actions_buffer[:,15] = GripperState.CLOSE
+                actions_buffer[:,:8] = actions
+                
+                
+                actions = actions_buffer
+                
+            else: # other agent is robot_2
+
+                actions = ppc_sm.compute_pick(
+                    torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1),
+                    torch.cat([object_position_2, desired_orientation], dim=-1),
+                    torch.cat([desired_position_2, desired_orientation], dim=-1),
+                )
+            
+                actions_buffer = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+                
+                actions_buffer[:,:7] = torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1)
+                actions_buffer[:,7] = GripperState.CLOSE
+                actions_buffer[:,8:] = actions
+                
+                actions = actions_buffer
+            
+            
+                    
+            if ppc_sm.sm_state == PickPlaceCleanSmState.APPROACH_ABOVE_OBJECT and ppc_sm.sm_wait_time >= PickPlaceCleanSmWaitTime.APPROACH_ABOVE_OBJECT: # pretend
+                ppc_sm.sm_state = PickPlaceCleanSmState.REST
+                
+                
+                break
+            else: 
+                if ppc_sm.sm_wait_time > PickPlaceCleanSmWaitTime.TIMEOUT:
+                    
+                    break
+                
+    s.ppc_sm = ppc_sm
+    return s
+def pretend_place_execute(s, args):
+    
+    # simulation
+    sim_env = s.sim_env 
+    sim_env_cfg = s.sim_env_cfg
+    robot_1_offset = s.robot_1_offset
+    robot_2_offset = s.robot_2_offset
+    ppc_sm = s.ppc_sm
+    
+    if args[2] == REGIONS[0]:
+        goal = torch.tensor([GOAL_POS]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
+    else:
+        goal = torch.tensor([TEMP_POS]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
+    
+    if args[0] == ROBOTS[0]:
+        goal = goal - robot_1_offset
+    else:
+        goal = goal - robot_2_offset   
+    
+    # robot_1
+    # -- end-effector frame
+    ee_frame_sensor_1 = sim_env.unwrapped.scene["ee_frame_1"]
+    tcp_rest_position_1 = ee_frame_sensor_1.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_1_offset
+    tcp_rest_orientation_1 = ee_frame_sensor_1.data.target_quat_w[..., 0, :].clone()
+    
+    # robot_2
+    # -- end-effector frame
+    ee_frame_sensor_2 = sim_env.unwrapped.scene["ee_frame_2"]
+    tcp_rest_position_2 = ee_frame_sensor_2.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_2_offset
+    tcp_rest_orientation_2 = ee_frame_sensor_2.data.target_quat_w[..., 0, :].clone()
+    
+    
+    # create action buffers (position + quaternion)
+    actions = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+    
+    actions[:,0:7] = torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1)
+    actions[:,7] = GripperState.CLOSE
+    
+    actions[:,8:15] = torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1)
+    actions[:,15] = GripperState.CLOSE
+    
+    
+    
+    # desired object orientation (we only do position control of object)
+    desired_orientation = torch.zeros((sim_env.unwrapped.num_envs, 4), device=sim_env.unwrapped.device)
+    desired_orientation[:, 1] = 1.0
+    # create state machine
+    ppc_sm = PickPlaceCleanSm(
+        sim_env_cfg.sim.dt * sim_env_cfg.decimation, sim_env.unwrapped.num_envs, sim_env.unwrapped.device, position_threshold=0.01
+    )
+    
+    
+    
+    while simulation_app.is_running():
+        # run everything in inference mode
+        with torch.inference_mode():
+            # step environment
+            dones = sim_env.step(actions)[-2]
+
+            # observations
+    
+            # robot_1
+            # -- end-effector frame
+            ee_frame_sensor_1 = sim_env.unwrapped.scene["ee_frame_1"]
+            tcp_rest_position_1 = ee_frame_sensor_1.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_1_offset
+            tcp_rest_orientation_1 = ee_frame_sensor_1.data.target_quat_w[..., 0, :].clone()
+            
+            # robot_2
+            # -- end-effector frame
+            ee_frame_sensor_2 = sim_env.unwrapped.scene["ee_frame_2"]
+            tcp_rest_position_2 = ee_frame_sensor_2.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins  - robot_2_offset
+            tcp_rest_orientation_2 = ee_frame_sensor_2.data.target_quat_w[..., 0, :].clone()
+            
+            
+            # -- object frame
+            object_data: RigidObjectData = sim_env.unwrapped.scene["object"].data
+            object_position_1 = object_data.root_pos_w - sim_env.unwrapped.scene.env_origins - robot_1_offset
+            object_position_2 = object_data.root_pos_w - sim_env.unwrapped.scene.env_origins - robot_2_offset
+
+            
+            # -- target object frame
+            desired_position_1 = torch.tensor([[0.2,0.0,0.35]]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device)
+            desired_position_2 = torch.tensor([[0.2,0.0,0.35]]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device)
+            
+
+            if args[0] == ROBOTS[0]: # other agent is robot_1  
+
+                actions = ppc_sm.compute_place(
+                    torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1),
+                    torch.cat([goal, desired_orientation], dim=-1),
+                    torch.cat([desired_position_1, desired_orientation], dim=-1),
+                )
+            
+                actions_buffer = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+                
+                actions_buffer[:,8:15] = torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1)
+                actions_buffer[:,15] = GripperState.CLOSE
+                actions_buffer[:,:8] = actions
+                
+                
+                actions = actions_buffer
+                
+            else: # other agent is robot_2
+
+                actions = ppc_sm.compute_place(
+                    torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1),
+                    torch.cat([goal, desired_orientation], dim=-1),
+                    torch.cat([desired_position_2, desired_orientation], dim=-1),
+                )
+            
+                actions_buffer = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+                
+                actions_buffer[:,:7] = torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1)
+                actions_buffer[:,7] = GripperState.CLOSE
+                actions_buffer[:,8:] = actions
+                
+                actions = actions_buffer
+            
+            # print statements => stable behavior??
+            print(ppc_sm.sm_state)
+            print(ppc_sm.sm_wait_time)       
+            if ppc_sm.sm_state == PickPlaceCleanSmState.APPROACH_ABOVE_GOAL and ppc_sm.sm_wait_time >= PickPlaceCleanSmWaitTime.APPROACH_ABOVE_GOAL: # pretend
+                ppc_sm.sm_state = PickPlaceCleanSmState.REST
+                
+                
+                break
+            else: 
+                if ppc_sm.sm_wait_time > PickPlaceCleanSmWaitTime.TIMEOUT:
+                    
+                    break
+                
+    s.ppc_sm = ppc_sm
+    return s
+def pretend_clean_execute(s, args):
+    
+    # simulation
+    sim_env = s.sim_env 
+    sim_env_cfg = s.sim_env_cfg
+    robot_1_offset = s.robot_1_offset
+    robot_2_offset = s.robot_2_offset
+    ppc_sm = s.ppc_sm
+    
+    
+    
+    if args[1] == REGIONS[0]:
+        goal_pos = GOAL_POS.copy()
+    else:
+        goal_pos = TEMP_POS.copy()
+        
+    goal_pos[1] -= 0.1
+    goal_pos[2] = 0.0 
+    
+    
+    goal = torch.tensor([goal_pos]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device) - sim_env.unwrapped.scene.env_origins 
+    if args[0] == ROBOTS[0]:
+        goal = goal - robot_1_offset
+    else:
+        goal = goal - robot_2_offset     
+    
+    # robot_1
+    # -- end-effector frame
+    ee_frame_sensor_1 = sim_env.unwrapped.scene["ee_frame_1"]
+    tcp_rest_position_1 = ee_frame_sensor_1.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_1_offset
+    tcp_rest_orientation_1 = ee_frame_sensor_1.data.target_quat_w[..., 0, :].clone()
+    
+    # robot_2
+    # -- end-effector frame
+    ee_frame_sensor_2 = sim_env.unwrapped.scene["ee_frame_2"]
+    tcp_rest_position_2 = ee_frame_sensor_2.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_2_offset
+    tcp_rest_orientation_2 = ee_frame_sensor_2.data.target_quat_w[..., 0, :].clone()
+    
+    
+    # create action buffers (position + quaternion)
+    actions = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+    
+    actions[:,0:7] = torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1)
+    actions[:,7] = GripperState.CLOSE
+    
+    actions[:,8:15] = torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1)
+    actions[:,15] = GripperState.CLOSE
+    
+    
+    
+    # desired object orientation (we only do position control of object)
+    desired_orientation = torch.zeros((sim_env.unwrapped.num_envs, 4), device=sim_env.unwrapped.device)
+    desired_orientation[:, 1] = 1.0
+    # create state machine
+    ppc_sm = PickPlaceCleanSm(
+        sim_env_cfg.sim.dt * sim_env_cfg.decimation, sim_env.unwrapped.num_envs, sim_env.unwrapped.device, position_threshold=0.01
+    )
+    
+    
+    
+    while simulation_app.is_running():
+        # run everything in inference mode
+        with torch.inference_mode():
+            # step environment
+            dones = sim_env.step(actions)[-2]
+
+            # observations
+    
+            # robot_1
+            # -- end-effector frame
+            ee_frame_sensor_1 = sim_env.unwrapped.scene["ee_frame_1"]
+            tcp_rest_position_1 = ee_frame_sensor_1.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins - robot_1_offset
+            tcp_rest_orientation_1 = ee_frame_sensor_1.data.target_quat_w[..., 0, :].clone()
+            
+            # robot_2
+            # -- end-effector frame
+            ee_frame_sensor_2 = sim_env.unwrapped.scene["ee_frame_2"]
+            tcp_rest_position_2 = ee_frame_sensor_2.data.target_pos_w[..., 0, :].clone() - sim_env.unwrapped.scene.env_origins  - robot_2_offset
+            tcp_rest_orientation_2 = ee_frame_sensor_2.data.target_quat_w[..., 0, :].clone()
+            
+            
+            # -- object frame
+            object_data: RigidObjectData = sim_env.unwrapped.scene["object"].data
+            object_position_1 = object_data.root_pos_w - sim_env.unwrapped.scene.env_origins - robot_1_offset
+            object_position_2 = object_data.root_pos_w - sim_env.unwrapped.scene.env_origins - robot_2_offset
+
+            
+            # -- target object frame
+            desired_position_1 = torch.tensor([[0.2,0.0,0.35]]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device)
+            desired_position_2 = torch.tensor([[0.2,0.0,0.35]]*sim_env.unwrapped.num_envs,device=sim_env.unwrapped.device)
+            
+
+            if args[0] == ROBOTS[0]: # other agent is robot_1  
+
+                actions = ppc_sm.compute_clean(
+                    torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1),
+                    torch.cat([goal, desired_orientation], dim=-1),
+                    torch.cat([desired_position_1, desired_orientation], dim=-1),
+                )
+            
+                actions_buffer = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+                
+                actions_buffer[:,8:15] = torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1)
+                actions_buffer[:,15] = GripperState.CLOSE
+                actions_buffer[:,:8] = actions
+                
+                
+                actions = actions_buffer
+                
+            else: # other agent is robot_2
+
+                actions = ppc_sm.compute_clean(
+                    torch.cat([tcp_rest_position_2, tcp_rest_orientation_2], dim=-1),
+                    torch.cat([goal, desired_orientation], dim=-1),
+                    torch.cat([desired_position_2, desired_orientation], dim=-1),
+                )
+            
+                actions_buffer = torch.zeros(sim_env.unwrapped.action_space.shape, device=sim_env.unwrapped.device)
+                
+                actions_buffer[:,:7] = torch.cat([tcp_rest_position_1, tcp_rest_orientation_1], dim=-1)
+                actions_buffer[:,7] = GripperState.CLOSE
+                actions_buffer[:,8:] = actions
+                
+                actions = actions_buffer
+            
+            
+            # print statements => stable behavior??
+            print(ppc_sm.sm_state)
+            print(ppc_sm.sm_wait_time)        
+            if ppc_sm.sm_state == PickPlaceCleanSmState.APPROACH_ABOVE_GOAL and ppc_sm.sm_wait_time >= PickPlaceCleanSmWaitTime.APPROACH_ABOVE_GOAL: # pretend
+                ppc_sm.sm_state = PickPlaceCleanSmState.REST
+                
+                break
+            else: 
+                if ppc_sm.sm_wait_time > PickPlaceCleanSmWaitTime.TIMEOUT:
+                    
+                    break
+                
+    s.ppc_sm = ppc_sm
+    return s
+       
 
 # other agents actions
     
@@ -1183,6 +1579,10 @@ def pick_other_execute_fn(a, b, s, store):
         if picked: # simulate pick and check result
             
             s = pick_execute(s, a.args[:3])
+            
+        else: 
+            
+            s = pretend_pick_execute(s, a.args[:3])
             
     if s.obj_regions[a.args[1]] == "" and s.holding[a.args[0]] == [a.args[1]]: # picked
         print("picked")
@@ -1250,6 +1650,8 @@ def place_other_execute_fn(a, b, s, store):
     if EXEC ==0 or EXEC == 1: # human or random; no change to state for nominal!
         if placed: 
             s = place_execute(s,a.args[:3])
+        else:
+            s = pretend_place_execute(s,a.args[:3])
             
 
     
@@ -1317,6 +1719,8 @@ def clean_other_execute_fn(a, b, s, store):
     if EXEC ==0 or EXEC == 1: # human or random; no change to state for nominal!
         if cleaned: 
             s = clean_execute(s, a.args[:2])
+        else: 
+            s = pretend_clean_execute(s, a.args[:2])
             
            
 
@@ -1401,15 +1805,21 @@ def joint_execute_fn(a, b, s, store):
         if s.obj_regions[args_ego[1]] == args_ego[2]: # feasibility check
             if random.random()<0.9:
                 s = pick_execute(s, args_ego)
+            else:
+                s = pretend_pick_execute(s, args_ego)
                
     elif a_ego_name == "place_ego": # no need for feasibility check
         if random.random()<0.9:
             s = place_execute(s, args_ego) 
+        else:
+            s = pretend_place_execute(s, args_ego)
             
     elif a_ego_name == "clean_ego":
         if args_ego[1] not in obj_regions.values(): # feasibility check
             if random.random()<0.9:
                 s = clean_execute(s, args_ego)
+            else:
+                s = pretend_clean_execute(s, args_ego)
     else: 
         pass
     
@@ -1691,6 +2101,27 @@ class ToyDiscrete(TampuraEnv):
                     schema.preconditions = as_other.preconditions + as_ego.preconditions + [Not(Eq("?reg1","?reg3"))] # other does not try to place in region ego is trying to clean
                     schema.effects = as_other.effects + as_ego.effects
                     schema.verify_effects = as_other.verify_effects + as_ego.verify_effects + [OneOf(po) for po in possible_outcomes]
+                
+                # dependent action: pick other, clean ego
+                elif as_other_name == "place_other" and as_ego_name == "pick_ego":
+                    
+                    schema.name = as_other_name+"*"+as_ego_name
+                    schema.inputs = as_other.inputs + as_ego.inputs
+                    schema.input_types = as_other.input_types + as_ego.input_types
+                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]), Eq("?obj1","?obj2"), Eq("?reg1","?reg3"),Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"]))]
+                    schema.effects = as_other.effects + as_ego.effects
+                    schema.verify_effects = [OneOf(po) for po in possible_outcomes]+ [OneOf([Atom("in_obj",["?obj1","?reg1"]),Atom("holding",["?rob1","?obj1"]),Atom("holding",["?rob2","?obj2"])])] # special ueffs
+                    
+                # dependent action: pick other, clean ego
+                elif as_other_name == "pick_other" and as_ego_name == "clean_ego":
+                    
+                    schema.name = as_other_name+"*"+as_ego_name
+                    schema.inputs = as_other.inputs + as_ego.inputs
+                    schema.input_types = as_other.input_types + as_ego.input_types
+                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]), Not(Atom("clean",["?reg1"])),Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"]))]
+                    schema.effects = as_other.effects + as_ego.effects
+                    schema.verify_effects = as_other.verify_effects + as_ego.verify_effects + [OneOf(po) for po in possible_outcomes]
+                    
                     
                 # regular cases
                 else: 
