@@ -459,7 +459,7 @@ from tampura.config.config import load_config, setup_logger
 # 0: human, 1: random, 2: inactive
 TRAIN = 1
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 1
+EXEC = 0
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
@@ -1815,7 +1815,7 @@ def joint_execute_fn(a, b, s, store):
             s = pretend_place_execute(s, args_ego)
             
     elif a_ego_name == "clean_ego":
-        if args_ego[1] not in obj_regions.values(): # feasibility check
+        if args_ego[1] not in s.obj_regions.values(): # feasibility check
             if random.random()<0.9:
                 s = clean_execute(s, args_ego)
             else:
