@@ -168,7 +168,7 @@ frames
 uct_tree.png
 temp
 sas_plan*
-*.gif
+# *.gif
 output.sas
 *.out
 
