@@ -33,12 +33,15 @@ from tampura.config.config import load_config, setup_logger
 
 from pick_successes import SIMPLE_PICK_EGO_SIM, CABINET_PICK_EGO_SIM
 
+
 # TODO: different training and execution scenarios, study the MDPs
 # TODO: change action templates for open open, etc.
 # 0: human, 1: random, 2: inactive
-TRAIN = 2
+TRAIN = 1
 # 0: human, 1: random, 2: inactive, 3: nominal
-EXEC = 2
+EXEC = 0
+# biased towards door related operations
+DOOR_BIAS = True # TODO
 
 ROB = "robot_"
 REG = "region_"
@@ -327,7 +330,34 @@ def get_next_actions_effects(a, b, store): # human operator : tedious, kind of w
             observed_action_rob = applicable_actions_rob[int(choice)] 
             print(observed_action_rob)
         elif TRAIN == 1: # random 
-            observed_action_rob = random.choice(applicable_actions_rob)
+            
+            if DOOR_BIAS:
+                
+                if b.rob_regions[rob]!=REGIONS[1]: # if not at door, go to door
+                    observed_action_rob=Atom("transit_action",[rob,REGIONS[1]])
+                else:
+                    
+                    if b.open_door: #  close if ego is not attempting close or holding object or attempts pick
+                        if a_ego_name == "pick_ego" or b.holding[a.args[n_args]]!=[]:
+                            observed_action_rob=Atom("close_action",[rob])
+                        else:
+                            observed_action_rob=Atom("nothing_action",[rob])                        
+                    else: # door is closed
+                        if a_ego_name == "open_ego":
+                            observed_action_rob=Atom("nothing_action",[rob])
+                        else:
+                            if b.holding[a.args[n_args]]==[]:
+                                observed_action_rob=Atom("open_action",[rob])
+                            else:
+                                observed_action_rob=Atom("nothing_action",[rob])
+                                
+                    # print(observed_action_rob)
+                    
+            else:
+                observed_action_rob = random.choice(applicable_actions_rob)
+                
+            
+            
         elif TRAIN == 2: # inactive agent
             observed_action_rob = Atom("nothing_action",[rob])
         
@@ -408,10 +438,15 @@ def transit_transfer_other_effects_fn(a, b, store):
         
     elif TRAIN == 1: # random
         
-        if random.random()<0.9:
+        if DOOR_BIAS:
             reg = a.args[2]
         else:
-            reg = random.choice(REGIONS)
+            if random.random()<0.9:
+                reg = a.args[2]
+            else:
+                reg = random.choice(REGIONS)
+            
+            
      
     rob_regions[a.args[0]] = reg
     
@@ -588,7 +623,11 @@ def open_other_effects_fn(a, b, store):
         opened = int(choice)==1
         print(opened)
     elif TRAIN == 1: # random
-        opened = random.random()<=0.9
+        
+        if DOOR_BIAS:
+            opened=True
+        else:
+            opened = random.random()<=0.9
     
     if opened: 
         open_door = True
@@ -644,7 +683,11 @@ def close_other_effects_fn(a, b, store):
         closed = int(choice)==1
         print(closed)
     elif TRAIN == 1: # random
-        closed = random.random()<=0.9
+        
+        if DOOR_BIAS:
+            closed=True
+        else:
+            closed = random.random()<=0.9
     
     if closed: 
         open_door = False
@@ -783,6 +826,7 @@ def joint_effects_fn(a, b, store):
         n_args = 1
     else:
         n_args = 3
+        
     
     args_ego = a.args[n_args:]
     
@@ -799,6 +843,11 @@ def joint_effects_fn(a, b, store):
         open_door = close_other_effects_fn(a, b, store)
     else:
         pass 
+    
+    # resulting state
+    o = EnvObservation(holding=holding,open_door=open_door,rob_regions=rob_regions,obj_regions=obj_regions,next_actions=next_actions)    
+    b_temp=b.update(a,o,store)
+    next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief
     
     # ego agent 
     if a_ego_name == "transit_ego" or a_ego_name == "transfer_ego":
@@ -851,9 +900,6 @@ def joint_effects_fn(a, b, store):
         
         pass
     
-    # resulting state
-    b_temp = copy.deepcopy(b)
-    next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief
     
     o = EnvObservation(holding=holding,open_door=open_door,rob_regions=rob_regions,obj_regions=obj_regions,next_actions=next_actions)    
     new_belief=b.update(a,o,store)
@@ -939,6 +985,7 @@ class ToyDiscrete(TampuraEnv):
                                Or([Not(Atom("in_rob",["?rob1",REGIONS[0]])),And([Atom("in_rob",["?rob1",REGIONS[0]]),Atom("open",[DOOR])])]), # TODO: modify!! accesibility of mug: derived predicate
                                Atom("in_obj",["?obj1","?reg1"]), # object is in region from where pick is attempted
                                Atom("in_rob",["?rob1","?reg1"]), # robot is in region from where pick is attempted
+                               Atom("stable",["?obj1","?reg1"]),
                                Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"])), # robot hand is free
                                ],
                 verify_effects=[OneOf([Atom("holding",["?rob1","?obj1"]),Atom("in_obj",["?obj1","?reg1"])])], 
@@ -1026,6 +1073,7 @@ class ToyDiscrete(TampuraEnv):
                                Or([Not(Atom("in_rob",["?rob2",REGIONS[0]])),And([Atom("in_rob",["?rob2",REGIONS[0]]),Atom("open",[DOOR])])]), # accesibility of mug: derived predicate
                                Atom("in_obj",["?obj2","?reg3"]), # object is in region from where pick is attempted
                                Atom("in_rob",["?rob2","?reg3"]), # robot is in region from where pick is attempted
+                               Atom("stable",["?obj2","?reg3"]),
                                Not(Exists(Atom("holding",["?rob2","?obj"]),["?obj"],["physical"])), # robot hand is free
                                ],
                 verify_effects=[OneOf([Atom("holding",["?rob2","?obj2"]),Atom("in_obj",["?obj2","?reg3"])])]+[OneOf(po) for po in possible_outcomes],
@@ -1138,13 +1186,11 @@ class ToyDiscrete(TampuraEnv):
                 elif as_other_name == "place_other" and as_ego_name == "pick_ego":
                     
                     schema.name = as_other_name+"*"+as_ego_name
-                    schema.inputs = ["?rob2","?obj1","?reg1","?rob1"]
-                    schema.input_types = ["robot","physical","region","robot"]
-                    schema.preconditions = [Atom("place_action",["?rob2","?obj1"]),Atom("is_ego",["?rob1"]),Not(Atom("is_ego",["?rob2"])),Atom("holding",["?rob2","?obj1"]),
-                                            Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"])),Atom("in_rob",["?rob1","?reg1"]),
-                                            Atom("in_rob",["?rob2","?reg1"]),Atom("stable",["?obj1","?reg1"]),
-                                            Or([Not(Atom("in_rob",["?rob2",REGIONS[0]])),And([Atom("in_rob",["?rob2",REGIONS[0]]),Atom("open",[DOOR])])]), # accessibility of region for place
-                                            ] # special Pre
+                    schema.inputs = as_other.inputs + as_ego.inputs
+                    schema.input_types = as_other.input_types + as_ego.input_types
+                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]),Or([Not(Atom("in_rob",["?rob1",REGIONS[0]])),And([Atom("in_rob",["?rob1",REGIONS[0]]),Atom("open",[DOOR])])]), # TODO: modify!! accesibility of mug: derived predicate
+                                                                     Atom("stable",["?obj1","?reg1"]),Atom("in_rob",["?rob1","?reg1"]), Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"]))]
+                    
                     schema.verify_effects = [OneOf([Atom("holding",["?rob1","?obj1"]),Atom("holding",["?rob2","?obj1"]),Atom("in_obj",["?obj1","?reg1"])])] + [OneOf(po) for po in possible_outcomes] # special UEff
                     
                 # case 2: open, pick
@@ -1153,7 +1199,7 @@ class ToyDiscrete(TampuraEnv):
                     schema.name = as_other_name+"*"+as_ego_name
                     schema.inputs = as_other.inputs + as_ego.inputs
                     schema.input_types = as_other.input_types + as_ego.input_types
-                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]), Atom("in_obj",["?obj1","?reg1"]), Atom("in_rob",["?rob1","?reg1"]), 
+                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]), Atom("in_obj",["?obj1","?reg1"]), Atom("in_rob",["?rob1","?reg1"]), Atom("stable",["?obj1","?reg1"]),
                                                                      Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"]))] # Pre for open + special Pre
                     schema.verify_effects = as_other.verify_effects + as_ego.verify_effects # UEff cartesian product (feasibility learned through probabilities)
                     
@@ -1183,7 +1229,7 @@ class ToyDiscrete(TampuraEnv):
                     schema.name = as_other_name+"*"+as_ego_name
                     schema.inputs = as_other.inputs + as_ego.inputs
                     schema.input_types = as_other.input_types + as_ego.input_types
-                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]), Not(Atom("in_obj",["?obj1",REGIONS[0]])),
+                    schema.preconditions = as_other.preconditions + [Atom("is_ego",["?rob1"]), Not(Atom("in_obj",["?obj1",REGIONS[0]])), Atom("stable",["?obj1","?reg1"]),
                                                                      Not(Exists(Atom("holding",["?rob1","?obj"]),["?obj"],["physical"])), Atom("in_rob",["?rob1","?reg1"])] # special Pre
                     schema.verify_effects = as_other.verify_effects + as_ego.verify_effects 
                     
@@ -1213,14 +1259,12 @@ class ToyDiscrete(TampuraEnv):
                     schema.inputs = as_other.inputs + as_ego.inputs
                     schema.input_types = as_other.input_types + as_ego.input_types
                     schema.preconditions = as_other.preconditions + as_ego.preconditions
-                    schema.verify_effects = as_other.verify_effects + as_ego.verify_effects   
+                    schema.verify_effects = as_other.verify_effects + as_ego.verify_effects  
                     
                 schema.execute_fn = joint_execute_fn
                 schema.effects_fn = joint_effects_fn
 
                 action_schemas.append(schema)
-                    
-       
         
         reward = GOAL
 
@@ -1284,6 +1328,11 @@ def main():
         elif TRAIN == 1: # random
             cfg['batch_size'] = 1000
             cfg['num_samples'] = 1000
+            if DOOR_BIAS:
+                cfg['batch_size'] = 100
+                cfg['num_samples'] = 6000 # 6000-10000 should work
+                cfg['num_skeletons'] = 100
+                
         elif TRAIN == 2:
             cfg["batch_size"] = 100  
             cfg["num_samples"] = 5000 
@@ -1624,9 +1673,6 @@ def main():
 
         if not planner2.config["real_execute"]:
             save_run_data(history2, planner2.config["save_dir"])
-        
-      
-                
 
 
 
