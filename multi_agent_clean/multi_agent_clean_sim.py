@@ -1872,7 +1872,10 @@ def joint_effects_fn(a, b, store):
         clean = clean_other_effects_fn(a, b, store)
     else: 
         pass
-        
+      
+    o = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions) 
+    b_temp=b.update(a,o,store)
+    next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief  
 
     if a_ego_name == "pick_ego":
         if obj_regions[args_ego[1]] == args_ego[2]: 
@@ -1891,9 +1894,6 @@ def joint_effects_fn(a, b, store):
         pass
     
     
-    # resulting state
-    b_temp = copy.deepcopy(b)
-    next_actions = get_next_actions_effects(a, b_temp, store) # get next actions from previous belief
     
     o = EnvObservation(holding=holding,clean=clean,obj_regions=obj_regions,next_actions=next_actions)    
     new_belief=b.update(a,o,store)
