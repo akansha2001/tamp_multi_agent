@@ -2345,6 +2345,7 @@ def main():
             if "rp" in planner.print_options:
                 logging.info("Next Reward: " + str(reward))
 
+            next_actions = get_next_actions_execute(action,b,store)
             # update the belief
             b = bp
             # update the state as modified by ego!
@@ -2360,7 +2361,6 @@ def main():
             
             # get current action
                         
-            next_actions = get_next_actions_execute(action,b,store)
             for ac in next_actions:
                 s.next_actions.append(ac)
                 
