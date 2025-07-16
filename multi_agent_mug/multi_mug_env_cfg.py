@@ -6,6 +6,7 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
+from isaaclab.actuators.actuator_cfg import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
@@ -32,6 +33,9 @@ from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # isort: skip
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
+FRAME_MARKER_SMALL_CFG = FRAME_MARKER_CFG.copy()
+FRAME_MARKER_SMALL_CFG.markers["frame"].scale = (0.00001, 0.00001, 0.00001)
+
 # ik-abs
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
@@ -41,8 +45,7 @@ from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsA
 ##
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
 
-
-from isaaclab_tasks.manager_based.manipulation.lift import mdp # modified
+from isaaclab_tasks.manager_based.manipulation.cabinet import mdp # modified
 
 
 # other
@@ -53,7 +56,7 @@ import copy
 
 
 @configclass
-class ObjectTableSceneCfg(InteractiveSceneCfg):
+class CabinetMugSceneCfg(InteractiveSceneCfg):
     """Configuration for the pick-clean-place scene with two robots and a object.
     This is the abstract base implementation, the exact scene is defined in the derived classes
     which need to set the target object, robots and end-effectors frames
@@ -71,20 +74,65 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     
     # target object: will be populated by agent env cfg
     object: RigidObjectCfg | DeformableObjectCfg = MISSING
+    
+    cabinet = ArticulationCfg(
+        prim_path="{ENV_REGEX_NS}/Cabinet",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd",
+            activate_contact_sensors=False,
+            scale = (1.0,0.4,1.0),
+        ),
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(0.8, 0, 0.2),
+            rot=(0.0, 0.0, 0.0, 1.0),
+            joint_pos={
+                "door_left_joint": 0.0,
+                "door_right_joint": 0.0,
+                "drawer_bottom_joint": 0.0,
+                "drawer_top_joint": 0.0,
+            },
+        ),
+        actuators={
+            "drawers": ImplicitActuatorCfg(
+                joint_names_expr=["drawer_top_joint", "drawer_bottom_joint"],
+                effort_limit=87.0,
+                velocity_limit=100.0,
+                stiffness=10.0,
+                damping=1.0,
+            ),
+            "doors": ImplicitActuatorCfg(
+                joint_names_expr=["door_left_joint", "door_right_joint"],
+                effort_limit=87.0,
+                velocity_limit=100.0,
+                stiffness=10.0,
+                damping=2.5,
+            ),
+        },
+    )
 
-    # Table
-    table = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Table",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0.707, 0, 0, 0.707]),
-        spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd",
-                         scale=(2, 2, 2),),
+    # Frame definitions for the cabinet.
+    cabinet_frame = FrameTransformerCfg(
+        prim_path="{ENV_REGEX_NS}/Cabinet/sektion",
+        debug_vis=True,
+        visualizer_cfg=FRAME_MARKER_SMALL_CFG.replace(prim_path="/Visuals/CabinetFrameTransformer"),
+        target_frames=[
+            FrameTransformerCfg.FrameCfg(
+                prim_path="{ENV_REGEX_NS}/Cabinet/drawer_handle_top",
+                name="drawer_handle_top",
+                offset=OffsetCfg(
+                    pos=(0.305, 0.0, 0.01),
+                    rot=(0.5, 0.5, -0.5, -0.5),  # align with end-effector frame
+                ),
+            ),
+        ],
     )
 
     # plane
     plane = AssetBaseCfg(
         prim_path="/World/GroundPlane",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0, 0, -1.05]),
-        spawn=GroundPlaneCfg(),
+        init_state=AssetBaseCfg.InitialStateCfg(),
+        spawn=sim_utils.GroundPlaneCfg(),
+        collision_group=-1,
     )
 
     # lights
@@ -94,34 +142,11 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     )
 
 
+
 ##
 # MDP settings
 ##
 
-
-@configclass
-class CommandsCfg:
-    """Command terms for the MDP."""
-    pass
-    # object_pose_1 = mdp.UniformPoseCommandCfg(
-    #     asset_name="robot_1",
-    #     body_name=MISSING,  # will be set by agent env cfg
-    #     resampling_time_range=(5.0, 5.0),
-    #     debug_vis=True,
-    #     ranges=mdp.UniformPoseCommandCfg.Ranges(
-    #         pos_x=(0.4, 0.6), pos_y=(-0.25, 0.25), pos_z=(0.25, 0.5), roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
-    #     ),
-    # )
-    
-    # object_pose_2 = mdp.UniformPoseCommandCfg(
-    #     asset_name="robot_2",
-    #     body_name=MISSING,  # will be set by agent env cfg
-    #     resampling_time_range=(5.0, 5.0),
-    #     debug_vis=True,
-    #     ranges=mdp.UniformPoseCommandCfg.Ranges(
-    #         pos_x=(0.4, 0.6), pos_y=(-0.25, 0.25), pos_z=(0.25, 0.5), roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
-    #     ),
-    # )
 
 
 @configclass
@@ -149,14 +174,23 @@ class ObservationsCfg:
         # robot_1
         joint_pos_1 = ObsTerm(func=mdp.joint_pos_rel, params = {"asset_cfg": SceneEntityCfg("robot_1")})
         joint_vel_1 = ObsTerm(func=mdp.joint_vel_rel, params = {"asset_cfg": SceneEntityCfg("robot_1")})
-        object_position_1 = ObsTerm(func=mdp.object_position_in_robot_root_frame, params = {"robot_cfg": SceneEntityCfg("robot_1")}) 
-        # target_object_position_1 = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose_1"})
         
+        rel_ee_drawer_distance_1 = ObsTerm(func=mdp.rel_ee_drawer_distance, params={"ext":"_1"})
+
         # robot_2
         joint_pos_2 = ObsTerm(func=mdp.joint_pos_rel, params = {"asset_cfg": SceneEntityCfg("robot_2")})
         joint_vel_2 = ObsTerm(func=mdp.joint_vel_rel, params = {"asset_cfg": SceneEntityCfg("robot_2")})
-        object_position_2 = ObsTerm(func=mdp.object_position_in_robot_root_frame, params = {"robot_cfg": SceneEntityCfg("robot_2")}) 
-        # target_object_position_2 = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose_2"})
+        
+        rel_ee_drawer_distance_2 = ObsTerm(func=mdp.rel_ee_drawer_distance, params={"ext":"_2"})
+
+        cabinet_joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("cabinet", joint_names=["drawer_top_joint"])},
+        )
+        cabinet_joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("cabinet", joint_names=["drawer_top_joint"])},
+        )
         
         # the full action tensor
         actions = ObsTerm(func=mdp.last_action)
@@ -174,19 +208,63 @@ class ObservationsCfg:
 @configclass
 class EventCfg:
     """Configuration for events."""
-
-    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
-
-    reset_object_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
+    robot_physics_material_1 = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
         params={
-            "pose_range": {"x": (-0.01, 0.01), "y": (-0.025, 0.025), "z": (0.0, 0.0)}, # modified!!
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object", body_names="Object"),
+            "asset_cfg": SceneEntityCfg("robot_1", body_names=".*"),
+            "static_friction_range": (0.8, 1.25),
+            "dynamic_friction_range": (0.8, 1.25),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 16,
+        },
+    )
+    
+    robot_physics_material_2 = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot_2", body_names=".*"),
+            "static_friction_range": (0.8, 1.25),
+            "dynamic_friction_range": (0.8, 1.25),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 16,
         },
     )
 
+    cabinet_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cabinet", body_names="drawer_handle_top"),
+            "static_friction_range": (1.0, 1.25),
+            "dynamic_friction_range": (1.25, 1.5),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 16,
+        },
+    )
+
+    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+
+    reset_robot_joints_1 = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot_1"),
+            "position_range": (0.0, 0.0),
+            "velocity_range": (0.0, 0.0),
+        },
+    )
+    
+    reset_robot_joints_2 = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot_2"),
+            "position_range": (0.0, 0.0),
+            "velocity_range": (0.0, 0.0),
+        },
+    )
 
 @configclass
 class RewardsCfg:
@@ -201,15 +279,8 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    object_dropping = DoneTerm(
-        func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")}
-    )
 
 
-@configclass
-class CurriculumCfg:
-    """Curriculum terms for the MDP."""
-    pass
     
 
 
@@ -219,36 +290,35 @@ class CurriculumCfg:
 
 
 @configclass
-class MultiCleanEnvCfg(ManagerBasedRLEnvCfg):
+class MultiMugEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: CabinetMugSceneCfg = CabinetMugSceneCfg(num_envs=4096, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
-    commands: CommandsCfg = CommandsCfg()
     # MDP settings
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
-    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         """Post initialization."""
         # general settings
-        self.decimation = 2
+        self.decimation = 1
         self.episode_length_s = 120.0
+        
+        self.viewer.eye = (-2.0, -2.0, 2.0)
+        self.viewer.lookat = (0.8, 0.0, 0.5)
         # simulation settings
-        self.sim.dt = 0.01  # 100Hz
+        self.sim.dt = 1 / 60  # 60Hz
         self.sim.render_interval = self.decimation
-
         self.sim.physx.bounce_threshold_velocity = 0.2
         self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024
         self.sim.physx.friction_correlation_distance = 0.00625
-
+        
+        
 
 # joint pos 
 
@@ -263,7 +333,7 @@ class MultiCleanEnvCfg(ManagerBasedRLEnvCfg):
 
 
 @configclass
-class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
+class FrankaMultiMugEnvCfgjp(MultiMugEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -275,7 +345,10 @@ class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
 
         # Set actions for the specific robot type (franka)
         self.actions.arm_action_1 = mdp.JointPositionActionCfg(
-            asset_name="robot_1", joint_names=["panda_joint.*"], scale=0.5, use_default_offset=True
+            asset_name="robot_1",
+            joint_names=["panda_joint.*"],
+            scale=1.0,
+            use_default_offset=True,
         )
         self.actions.gripper_action_1 = mdp.BinaryJointPositionActionCfg(
             asset_name="robot_1",
@@ -283,8 +356,36 @@ class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
             open_command_expr={"panda_finger_.*": 0.04},
             close_command_expr={"panda_finger_.*": 0.0},
         )
-        # Set the body name for the end effector
-        # self.commands.object_pose_1.body_name = "panda_hand"
+        
+        self.scene.ee_frame_1 = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot_1/panda_link0",
+            debug_vis=False,
+            visualizer_cfg=FRAME_MARKER_SMALL_CFG.replace(prim_path="/Visuals/EndEffectorFrameTransformer_1"),
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot_1/panda_hand",
+                    name="ee_tcp",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.1034),
+                    ),
+                ),
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot_1/panda_leftfinger",
+                    name="tool_leftfinger",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.046),
+                    ),
+                ),
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot_1/panda_rightfinger",
+                    name="tool_rightfinger",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.046),
+                    ),
+                ),
+            ],
+        )
+
         
         # robot_2
         # Set Franka as robot
@@ -293,7 +394,10 @@ class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
 
         # Set actions for the specific robot type (franka)
         self.actions.arm_action_2 = mdp.JointPositionActionCfg(
-            asset_name="robot_2", joint_names=["panda_joint.*"], scale=0.5, use_default_offset=True
+            asset_name="robot_2",
+            joint_names=["panda_joint.*"],
+            scale=1.0,
+            use_default_offset=True,
         )
         self.actions.gripper_action_2 = mdp.BinaryJointPositionActionCfg(
             asset_name="robot_2",
@@ -301,13 +405,41 @@ class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
             open_command_expr={"panda_finger_.*": 0.04},
             close_command_expr={"panda_finger_.*": 0.0},
         )
-        # Set the body name for the end effector
-        # self.commands.object_pose_2.body_name = "panda_hand"
+        
+        self.scene.ee_frame_2 = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot_2/panda_link0",
+            debug_vis=False,
+            visualizer_cfg=FRAME_MARKER_SMALL_CFG.replace(prim_path="/Visuals/EndEffectorFrameTransformer_2"),
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot_2/panda_hand",
+                    name="ee_tcp",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.1034),
+                    ),
+                ),
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot_2/panda_leftfinger",
+                    name="tool_leftfinger",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.046),
+                    ),
+                ),
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot_2/panda_rightfinger",
+                    name="tool_rightfinger",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.046),
+                    ),
+                ),
+            ],
+        )
+        
 
         # Set Cube as object
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.55, 0.0, 0.5], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -321,49 +453,12 @@ class FrankaMultiCleanEnvCfgjp(MultiCleanEnvCfg):
                 ),
             ),
         )
-
-        # Listens to the required transforms
-        # robot_1
-        marker_cfg_1 = FRAME_MARKER_CFG.copy()
-        marker_cfg_1.markers["frame"].scale = (0.1, 0.1, 0.1)
-        marker_cfg_1.prim_path = "/Visuals/FrameTransformer_1"
-        self.scene.ee_frame_1 = FrameTransformerCfg(
-            prim_path="{ENV_REGEX_NS}/Robot_1/panda_link0",
-            debug_vis=False,
-            visualizer_cfg=marker_cfg_1,
-            target_frames=[
-                FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot_1/panda_hand",
-                    name="end_effector",
-                    offset=OffsetCfg(
-                        pos=[0.0, 0.0, 0.1034],
-                    ),
-                ),
-            ],
-        )
         
-        # robot_2
-        marker_cfg_2 = FRAME_MARKER_CFG.copy()
-        marker_cfg_2.markers["frame"].scale = (0.1, 0.1, 0.1)
-        marker_cfg_2.prim_path = "/Visuals/FrameTransformer_2"
-        self.scene.ee_frame_2 = FrameTransformerCfg(
-            prim_path="{ENV_REGEX_NS}/Robot_2/panda_link0",
-            debug_vis=False,
-            visualizer_cfg=marker_cfg_2,
-            target_frames=[
-                FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot_2/panda_hand",
-                    name="end_effector",
-                    offset=OffsetCfg(
-                        pos=[0.0, 0.0, 0.1034],
-                    ),
-                ),
-            ],
-        )
+        
 
-
+        
 @configclass
-class FrankaMultiCleanEnvCfgjp_PLAY(FrankaMultiCleanEnvCfgjp):
+class FrankaMultiMugEnvCfgjp_PLAY(FrankaMultiMugEnvCfgjp):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -389,7 +484,7 @@ class FrankaMultiCleanEnvCfgjp_PLAY(FrankaMultiCleanEnvCfgjp):
 
 
 @configclass
-class FrankaMultiCleanEnvCfgik(FrankaMultiCleanEnvCfgjp):
+class FrankaMultiMugEnvCfgik(FrankaMultiMugEnvCfgjp):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -431,7 +526,7 @@ class FrankaMultiCleanEnvCfgik(FrankaMultiCleanEnvCfgjp):
 
 
 @configclass
-class FrankaMultiCleanEnvCfgik_PLAY(FrankaMultiCleanEnvCfgik):
+class FrankaMultiMugEnvCfgik_PLAY(FrankaMultiMugEnvCfgik):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
