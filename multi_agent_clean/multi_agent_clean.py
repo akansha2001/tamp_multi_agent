@@ -928,8 +928,8 @@ def main():
         elif TRAIN == 1: # random
             cfg['envelope_threshold'] = 10e-10 
             cfg['num_skeletons'] = 10
-            cfg['batch_size'] = 500
-            cfg['num_samples'] = 500
+            cfg['batch_size'] = 100
+            cfg['num_samples'] = 100
         elif TRAIN == 2:
             cfg['envelope_threshold'] = 10e-5 # other agent consistent but ego may fail
             cfg['num_skeletons'] = 10 # exhaust all combinations
@@ -1118,7 +1118,7 @@ def main():
 
         st = time.time()
         for step in range(100):
-
+            
             # robot 1 acts
             env1.state = copy.deepcopy(env2.state) # important!!
             s1 = copy.deepcopy(env1.state)
@@ -1127,6 +1127,7 @@ def main():
             reward1 = env1.problem_spec.get_reward(a_b1, store1)
             
             if reward1:
+                g=True
                 print("goal achieved")
                 break  
             
@@ -1151,23 +1152,45 @@ def main():
                 observation1 = None
                 
                 # replace previous action with nothing 
-                for ac in s.next_actions:
+                for ac in s1.next_actions:
                     name,args = ac.split("-")
                     args=args.split("%")
                     if args[0] != ROBOTS[0]: # other agent
-                        s.next_actions.remove(ac)
-                        s.next_actions.append("nothing_action-"+args[0])
+                        s1.next_actions.remove(ac)
+                        s1.next_actions.append("nothing_action-"+args[0])
                 
-                continue 
-            else:
-                if "a" in planner1.print_options:
-                    logging.info("Action: " + str(action1))
+                # recompute!!
+                b1.next_actions = s1.next_actions # important!!
+                a_b1 = b1.abstract(store1)
+                reward1 = env1.problem_spec.get_reward(a_b1, store1)
+                
+                if reward1:
+                    print("goal achieved")
+                    break  
+                
+                logging.info("\n robot 1 ")
+                logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+                if "s" in planner1.print_options:
+                    logging.info("State: " + str(s1))
+                if "b" in planner1.print_options:
+                    logging.info("Belief: " + str(b1))
+                if "ab" in planner1.print_options:
+                    logging.info("Abstract Belief: " + str(a_b1))
+                if "r" in planner1.print_options:
+                    logging.info("Reward: " + str(reward1))
+                
+                
+                action1, info1, store1 = planner1.get_action(b1, store1) # should only call effects functions!!??
+            
+                
+            if "a" in planner1.print_options:
+                logging.info("Action: " + str(action1))
 
-                observation1= env1.step(action1, b1, store1) # should call execute function
-                bp1 = b1.update(action1, observation1, store1)
+            observation1= env1.step(action1, b1, store1) # should call execute function
+            bp1 = b1.update(action1, observation1, store1)
 
-                if planner1.config["vis"]:
-                    env1.vis_updated_belief(bp1, store1)
+            if planner1.config["vis"]:
+                env1.vis_updated_belief(bp1, store1)
 
             a_bp1 = bp1.abstract(store1)
             history1.add(s1, b1, a_b1, action1, observation1, reward1, info1, store1, time.time() - st)
@@ -1188,6 +1211,8 @@ def main():
             # update the belief
             b1 = bp1
             
+            
+            
             # robot 2 acts
             env2.state = copy.deepcopy(env1.state) # important!!
             s2 = copy.deepcopy(env2.state)
@@ -1197,6 +1222,7 @@ def main():
             
             if reward2:
                 print("goal achieved")
+                g=True
                 break  
 
             logging.info("\n robot 2 ")
@@ -1222,22 +1248,47 @@ def main():
                 observation2 = None
                 
                 # replace previous action with nothing 
-                for ac in s.next_actions:
+                for ac in s2.next_actions:
                     name,args = ac.split("-")
                     args=args.split("%")
                     if args[0] != ROBOTS[1]:
-                        s.next_actions.remove(ac)
-                        s.next_actions.append("nothing_action-"+args[0])
+                        s2.next_actions.remove(ac)
+                        s2.next_actions.append("nothing_action-"+args[0])
                 
-                continue 
-            else:
-                if "a" in planner2.print_options:
-                    logging.info("Action: " + str(action2))
-                observation2= env2.step(action2, b2, store2) # should call execute function
-                bp2 = b2.update(action2, observation2, store2)
+                # recompute
+                b2.next_actions = s2.next_actions # important!!
+                a_b2 = b2.abstract(store2)
+                reward2 = env2.problem_spec.get_reward(a_b2, store2)
+                
+                if reward2:
+                    print("goal achieved")
+                    g=True
+                    break  
 
-                if planner2.config["vis"]:
-                    env2.vis_updated_belief(bp2, store2)
+                logging.info("\n robot 2 ")
+                logging.info("\n" + ("=" * 10) + "t=" + str(step) + ("=" * 10))
+                if "s" in planner2.print_options:
+                    logging.info("State: " + str(s2))
+                if "b" in planner1.print_options:
+                    logging.info("Belief: " + str(b2))
+                if "ab" in planner1.print_options:
+                    logging.info("Abstract Belief: " + str(a_b2))
+                if "r" in planner1.print_options:
+                    logging.info("Reward: " + str(reward2))
+                
+                
+                
+            action2, info2, store2 = planner2.get_action(b2, store2) # should only call effects functions!!??
+                
+                
+            
+            if "a" in planner2.print_options:
+                logging.info("Action: " + str(action2))
+            observation2= env2.step(action2, b2, store2) # should call execute function
+            bp2 = b2.update(action2, observation2, store2)
+
+            if planner2.config["vis"]:
+                env2.vis_updated_belief(bp2, store2)
 
             a_bp2 = bp2.abstract(store2)
             history2.add(s2, b2, a_b2, action2, observation2, reward2, info2, store2, time.time() - st)
@@ -1257,6 +1308,7 @@ def main():
 
             # update the belief
             b2 = bp2
+   
 
         history1.add(env1.state, bp1, a_bp1, None, None, reward1, info1, store1, time.time() - st)
         history2.add(env2.state, bp2, a_bp2, None, None, reward2, info2, store2, time.time() - st)
