@@ -156,7 +156,7 @@ Demonstrations are shown below for the other agent having the same algorithm as 
     </td>
     <td align="center">
       <img src="figs/mug_demos/inactive.gif" width="300"><br>
-      <strong>Human Agent</strong>
+      <strong>Inactive Agent</strong>
     </td>
   </tr>
 </table>
