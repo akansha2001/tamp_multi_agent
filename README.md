@@ -1,14 +1,14 @@
 
 
-_**Note**: This repository contains explanation, code and demonstrations for my thesis at the [Autonomous Multi-Robots Lab](https://autonomousrobots.nl/) in the second year of my Master Robotics program at the Technical University of Delft. The aim of the thesis was to solve interaction uncertainty for decentralized multi-agent task and motion planning settings by extendinf the [TAMPURA](https://arxiv.org/pdf/2403.10454) framework. Two scenarios of this problem have been demonstrated below._
+_**Note**: This repository contains explanation, code and demonstrations for my thesis at the [Autonomous Multi-Robots Lab](https://autonomousrobots.nl/) in the second year of my Master Robotics program at the Technical University of Delft. The aim of the thesis was to solve interaction uncertainty for decentralized multi-agent task and motion planning settings by building on the [single-agent Bayes optimistic model learning](https://arxiv.org/pdf/2403.10454) framework. Two scenarios of this problem have been demonstrated below._
 
 # TAMPURA for decentralized multi-agent settings
 
 Decentralized multi-agent systems offer a powerful and scalable approach to solving complex, long-horizon tasks in dynamic and unstructured environments. By distributing responsibilities across multiple autonomous agents, these systems improve safety, efficiency, and modularity compared to single-agent or centralized approaches. Collaboration allows agents to share workloads, such as one agent holding an object while another opens a door, resulting in safer execution and reduced risk of failure. Decentralization also enables parallel task execution, significantly lowering overall execution time and resource consumption, which is especially valuable in high-stakes domains like warehouse automation, disaster response, and exploration.
 
-However, decentralization introduces a key challenge: **interaction uncertainty**. Without a centralized planner to coordinate behavior, agents must reason independently under limited observability about others’ current actions, future plans, and action completion times. This uncertainty can lead to conflicts, inefficiencies, and coordination failures. This work addresses that gap by extending task and motion planning under uncertainty (TAMPURA) to decentralized settings. The proposed framework enables agents to model and adapt to each other's behavior during planning and execution without explicit communication, improving coordination in uncertain multi-agent environments.
+However, decentralization introduces a key challenge: **interaction uncertainty**. Without a centralized planner to coordinate behavior, agents must reason independently under limited observability about others’ current actions, future plans, and action completion times. This uncertainty can lead to conflicts, inefficiencies, and coordination failures. This work addresses the gap by extending Bayes optimistic model learning to decentralized multi-agent settings. The proposed framework enables agents to model and adapt to each other's behavior during planning and execution without explicit communication, improving coordination in uncertain multi-agent environments.
 
-## Toy examples
+## Toy scenarios
 
 
 This project demonstrates the proposed decentralized task and motion planning framework using two representative two-agent scenarios, each with varying complexity and planning horizon lengths. While either robot can complete the full task independently, coordination significantly improves efficiency. Uncertainty is primarily addressed at the symbolic level, but the approach can be extended to handle geometric uncertainty using standard task and motion planning techniques. These settings illustrate the framework’s ability to handle interaction uncertainty in decentralized multi-agent systems.
@@ -16,7 +16,9 @@ This project demonstrates the proposed decentralized task and motion planning fr
 
 ### Cleaning Scenario
 
-In this short-horizon collaborative task, two robotic manipulators work together to clean a surface beneath a block and then place the block back in its original position. The task is broken down into three sub-tasks: removing the block, cleaning the area, and replacing the block. The scenario highlights basic coordination between agents under partial observability. The baseline is shown below.
+In this short-horizon collaborative task, two robotic manipulators work together to clean a surface beneath a block and then place the block back in its original position. The task is broken down into three sub-tasks: removing the block, cleaning the area, and replacing the block. The scenario highlights basic coordination between agents under partial observability. The baseline is shown below following minimum steps to the goal.
+
+
 
 <p align="center">
   <img width="600" src="figs/clean_demos/nominal.gif">
@@ -35,9 +37,9 @@ A more complex, long-horizon task involves two mobile manipulators collaborating
 
 ## Method
 
-This work extends the TAMPURA framework to decentralized multi-agent settings, where agents pursue shared goals under interaction uncertainty. Each agent independently plans its actions while reasoning about the uncertain, partially observable behavior of others. The ego agent observes the apparent action of the other agent, but due to perception noise and execution delays, it cannot be certain of the action’s success or true intent of the other agent. To address this, the framework models both the current and future behavior of the other agent using uncertain symbolic outcomes and learns an MDP to represent the behavior of the other agent. A key feature is the use of "other–ego action pairs" to delay observations and ensure realistic transitions, enabling the ego agent to plan robustly with partial knowledge. The approach improves coordination by leveraging domain-specific assumptions such as action locality and limited confusability between actions, resulting risk-aware, decentralized task and motion planning.
+This work extends Bayes optimistic model learning to decentralized multi-agent settings, where agents pursue shared goals under interaction uncertainty. Each agent independently plans its actions while reasoning about the uncertain, partially observable behavior of others. The ego agent observes the apparent action of the other agent, but due to perception noise and execution delays, it cannot be certain of the action’s success or true intent of the other agent. In other words, the other agent is **_partially observable_** to the ego agent. The framework models both the current and future behavior of the other agent using uncertain symbolic outcomes and learns the transition model for an interactive MDP to represent the behavior of the other agent. The framework uses "other–ego action pairs" or joint actions to delay observations and ensure realistic transitions, enabling the ego agent to plan robustly with partial knowledge. The approach improves coordination by leveraging domain-specific assumptions such as action locality and limited **_confusability_** between actions, resulting risk-aware, decentralized task and motion planning.
 
-During MDP learning, the ego agent builds a model of the other agent's behavior by querying a behavior function. Depending on the scenario, the other agent may act randomly, be human-operated, or remain inactive. Random behavior leads to a larger, more branched MDP due to its unpredictability, while human or inactive agents produce more consistent and structured models, as illustrated below.
+During model learning, the ego agent builds a model of the other agent's behavior by querying a behavior function. Depending on the scenario, the other agent may act randomly, be human-operated, or remain inactive. Random behavior leads to a larger, more branched MDP due to its unpredictability, while human or inactive agents produce more consistent and structured models, as illustrated below.
 
 
 
