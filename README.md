@@ -26,8 +26,9 @@ In this short-horizon collaborative task, two robotic manipulators work together
 
 A more complex, long-horizon task involves two mobile manipulators collaborating to retrieve a mug from a cabinet and ensuring the cabinet door is closed afterward. Sub-tasks include opening the cabinet door (via a button press), retrieving the mug, and closing the door. In this scenario, a decentralized TAMP module runs on one robot (the ego agent), which must reason about the uncertain behavior of the other agent. The ego agent cannot deterministically observe or predict the other agent's current or future actions, and must plan accordingly without assuming access to the other agent’s internal state or intentions. 
 
+
 <p align="center">
-  <img src="figs/cabinet_toy.png" alt="Alt text" width="600"/>
+  <img width="600" src="figs/mug_demos/nominal.gif">
 </p>
 
 
@@ -39,9 +40,6 @@ This work extends the TAMPURA framework to decentralized multi-agent settings, w
 During MDP learning, the ego agent builds a model of the other agent's behavior by querying a behavior function. Depending on the scenario, the other agent may act randomly, be human-operated, or remain inactive. Random behavior leads to a larger, more branched MDP due to its unpredictability, while human or inactive agents produce more consistent and structured models, as illustrated below.
 
 
-<p align="center">
-  <img src="figs/random_other/transition_function_t=0_s=0.png" alt="Alt text" height="600"/>
-</p>
 
 <p align="center">
   <img src="figs/human_transition_function_t=0_s=40.png" alt="Alt text" width="600"/>
@@ -112,14 +110,16 @@ More information about single agent scenarios is available on [this repository](
 
 # Results
 
-Demonstrations are shown below for the other agent having the same algorithm as the ego agent, a random other agent, an apparently cooperative human agent and an inactive other agent.
+Demonstrations are shown below for the other agent having the same algorithm as the ego agent (optimal), a random other agent, an apparently cooperative human agent and an inactive other agent.
+
+## S1: Cleaning Scenario
 
 <div align="center">
 <table>
   <tr>
     <td align="center">
       <img src="figs/clean_demos/nominal.gif" width="300"><br>
-      <strong>Nominal (Centralized Baseline)</strong>
+      <strong>Optimal</strong>
     </td>
     <td align="center">
       <img src="figs/clean_demos/random1.gif" width="300"><br>
@@ -134,6 +134,27 @@ Demonstrations are shown below for the other agent having the same algorithm as 
     <td align="center">
       <img src="figs/clean_demos/inactive.gif" width="300"><br>
       <strong>Inactive Agent</strong>
+    </td>
+  </tr>
+</table>
+
+## S2: Mug retrieval Scenario
+
+
+<div align="center">
+<table>
+  <tr>
+    <td align="center">
+      <img src="figs/mug_demos/nominal.gif" width="300"><br>
+      <strong>Optimal</strong>
+    </td>
+    <td align="center">
+      <img src="figs/mug_demos/human_mug.gif" width="300"><br>
+      <strong>Human Agent</strong>
+    </td>
+    <td align="center">
+      <img src="figs/mug_demos/inactive.gif" width="300"><br>
+      <strong>Human Agent</strong>
     </td>
   </tr>
 </table>
